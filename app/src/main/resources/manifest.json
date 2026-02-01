@@ -1,0 +1,18 @@
+{
+  "Group": "com.alexispace",
+  "Name": "HytaleVehicles",
+  "Version": "1.0.0",
+  "Description": "Adds rideable vehicles to Hytale - cars, boats, motorcycles and more",
+  "Authors": [
+    {
+      "Name": "alexispace"
+    }
+  ],
+  "Main": "com.alexispace.hyvehicles.HytaleVehiclesPlugin",
+  "ServerVersion": "*",
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "DisabledByDefault": false,
+  "IncludesAssetPack": false,
+  "SubPlugins": []
+}
