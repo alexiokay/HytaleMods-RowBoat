@@ -25,3 +25,12 @@ subprojects {
         }
     }
 }
+
+// Configure Gradle to auto-download Java 25 from Adoptium (Eclipse Temurin)
+plugins.withType<JavaPlugin> {
+    configure<JavaPluginExtension> {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(25))
+        }
+    }
+}

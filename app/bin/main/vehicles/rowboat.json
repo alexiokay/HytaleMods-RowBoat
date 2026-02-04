@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "hyvehicles:rowboat",
+  "name": "Rowboat",
+  "description": "A two-seater rowboat with oars. The driver rows while a passenger can enjoy the view.",
+  "type": "BOAT",
+
+  "maxSpeed": 5.0,
+  "acceleration": 1.5,
+  "turnRate": 45.0,
+  "friction": 0.95,
+
+  "buoyancy": 1.4,
+  "waterDrag": 0.88,
+
+  "collisionWidth": 1.2,
+  "collisionHeight": 0.5,
+  "collisionLength": 2.8,
+
+  "seats": [
+    {
+      "x": 0.0,
+      "y": 0.25,
+      "z": -0.4,
+      "isDriver": true,
+      "canControl": true,
+      "rotationOffset": 0
+    },
+    {
+      "x": 0.0,
+      "y": 0.25,
+      "z": 0.6,
+      "isDriver": false,
+      "canControl": false,
+      "rotationOffset": 180
+    }
+  ],
+
+  "model": "models/rowboat.obj",
+  "texture": "textures/rowboat.png",
+  "modelYOffset": -0.25
+}

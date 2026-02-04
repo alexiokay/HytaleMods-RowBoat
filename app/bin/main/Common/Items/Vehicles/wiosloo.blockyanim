@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "duration": 162,
+  "holdLastKeyframe": false,
+  "nodeAnimations": {
+    "wioslo": {
+      "position": [],
+      "orientation": [
+        {
+          "time": 0,
+          "delta": {"x": 0, "y": 0, "z": 0, "w": 1},
+          "interpolationType": "smooth"
+        },
+        {
+          "time": 108,
+          "delta": {"x": 0, "y": -0.79335, "z": 0, "w": 0.60876},
+          "interpolationType": "smooth"
+        }
+      ],
+      "shapeStretch": [],
+      "shapeVisible": [],
+      "shapeUvOffset": []
+    },
+    "wioslo3": {
+      "position": [],
+      "orientation": [
+        {
+          "time": 0,
+          "delta": {"x": 0, "y": 0, "z": 0, "w": 1},
+          "interpolationType": "smooth"
+        },
+        {
+          "time": 108,
+          "delta": {"x": 0, "y": 0.79335, "z": 0, "w": 0.60876},
+          "interpolationType": "smooth"
+        }
+      ],
+      "shapeStretch": [],
+      "shapeVisible": [],
+      "shapeUvOffset": []
+    }
+  }
+}

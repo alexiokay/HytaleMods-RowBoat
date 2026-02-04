@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd //c \"dir /s /b C:\\\\Users\\\\alexispace\\\\AppData\\\\Local\\\\Temp\\\\com\\\\hypixel\\\\hytale 2>&1 | head -30\")"
+    ]
+  }
+}

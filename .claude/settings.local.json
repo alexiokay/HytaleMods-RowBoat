@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"$jarPath = \\(Get-ChildItem ''C:\\\\Users\\\\alexispace\\\\.gradle\\\\caches\\\\modules-2\\\\files-2.1\\\\com.hypixel.hytale\\\\Server\\\\2026.01.29-301e13929'' -Filter ''*.jar'' -Recurse | Select-Object -First 1\\).FullName; Write-Host ''JAR: '' $jarPath; jar -tf $jarPath 2>&1 | Select-String ''command'' | Select-Object -First 30\")",
+      "Bash(powershell -Command:*)",
+      "WebFetch(domain:hytale-docs.com)",
+      "Bash(jar tf:*)",
+      "Bash(xargs:*)",
+      "WebFetch(domain:doc.hytaledev.fr)",
+      "WebFetch(domain:hytale-docs.pages.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:hytalehub.com)",
+      "Bash(./gradlew.bat:*)",
+      "Bash(grep:*)",
+      "Bash(cmd //c \"dir /s /b c:\\\\Users\\\\alexispace\\\\AppData\\\\*StarTale* 2>&1 | head -5\")",
+      "Bash(cmd //c \"dir /s /b C:\\\\Users\\\\alexispace\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-alexispace-Desktop-webdev-hytale-HytaleVehicles\\\\a5937b10-1b68-4cba-9cd2-a515aafde24e\\\\scratchpad\\\\StarTale\\\\Common\\\\Items 2>&1\")",
+      "Bash(cmd //c \"dir /ad /s C:\\\\Program*\\\\Hytale* 2>&1 | head -30\")",
+      "Bash(cmd //c \"dir /ad /s C:\\\\Games\\\\Hytale* 2>&1 | head -10\")",
+      "Bash(cmd //c \"dir /s /b F:\\\\games\\\\hytale\\\\*SimpleBoat* 2>&1 | head -10\")",
+      "Bash(jar -tf:*)",
+      "Bash(unzip:*)",
+      "Bash(jar -xf:*)",
+      "WebFetch(domain:hytalemodding.dev)",
+      "Bash(cmd /c \"cd /d F:\\\\games\\\\hytale\\\\GameClient\\\\libs && jar tf hytale-server-api.jar\")",
+      "WebFetch(domain:www.curseforge.com)",
+      "Bash(cmd /c:*)",
+      "Bash(ls:*)",
+      "Bash(powershell:*)",
+      "Bash(jar xf:*)",
+      "Bash(dir:*)",
+      "Bash(java -jar cfr.jar:*)",
+      "Bash(find:*)",
+      "Bash(java -jar cfr-0.152.jar:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}
