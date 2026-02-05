@@ -55,9 +55,6 @@ public class VehicleMountSystem {
     // Track mounted players (player UUID -> mount info)
     private final Map<UUID, MountInfo> mountedPlayers = new ConcurrentHashMap<>();
 
-    // Track previous crouching state for edge detection (player UUID -> was crouching)
-    private final Map<UUID, Boolean> previousCrouchingState = new ConcurrentHashMap<>();
-
     // Brake/boost multipliers
     private static final float BRAKE_MULTIPLIER = 0.5f;  // 50% speed when braking
     private static final float BOOST_MULTIPLIER = 1.5f;  // 150% speed when boosting
@@ -123,25 +120,6 @@ public class VehicleMountSystem {
 
             // === APPLY MOVEMENTCONFIG TO DISABLE JUMPING ===
             applyMovementConfig(player, store, "Montar");
-
-            // === SET MOUNTING FLAG ===
-            // Set mounting=true so we can detect when Hytale clears it on dismount
-            try {
-                Ref<EntityStore> playerEntityRef = player.getReference();
-                if (playerEntityRef != null && playerEntityRef.isValid()) {
-                    MovementStatesComponent movementComp = store.getComponent(
-                        playerEntityRef, MovementStatesComponent.getComponentType());
-                    if (movementComp != null) {
-                        MovementStates states = movementComp.getMovementStates();
-                        if (states != null) {
-                            states.mounting = true;
-                            movementComp.setMovementStates(states);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.warning("Failed to set mounting flag: " + e.getMessage());
-            }
 
             // Track this mount with full info
             mountedPlayers.put(playerUUID, new MountInfo(player, vehicleRef, seatIndex));
@@ -288,51 +266,6 @@ public class VehicleMountSystem {
                 continue;
             }
 
-            // CHECK: Has player actually dismounted?
-            // When player presses F to dismount, Hytale clears the 'mounting' flag
-            try {
-                Ref<EntityStore> playerEntityRef = player.getReference();
-                if (playerEntityRef != null && playerEntityRef.isValid()) {
-                    MovementStatesComponent movementComp = store.getComponent(
-                        playerEntityRef, MovementStatesComponent.getComponentType());
-
-                    if (movementComp != null) {
-                        MovementStates states = movementComp.getMovementStates();
-
-                        // If mounting flag is false, player has dismounted
-                        if (states != null && !states.mounting) {
-                            UUID playerUUID = entry.getKey();
-                            logger.info("[DISMOUNT] Player dismounted - cleaning up mount tracking");
-
-                            // Clean up
-                            resetMovementConfig(player, store);
-                            vehicleData.vacateSeat(mountInfo.seatIndex);
-                            previousCrouchingState.remove(playerUUID); // Clean up crouch state tracking
-
-                            try {
-                                var plugin = com.alexispace.hyvehicles.HytaleVehiclesPlugin.getInstance();
-                                if (plugin != null) {
-                                    var registry = plugin.getRegistry();
-                                    if (registry != null) {
-                                        var vehicle = registry.getVehicleByEntityRef(vehicleRef);
-                                        if (vehicle != null) {
-                                            vehicle.dismount(playerUUID);
-                                        }
-                                    }
-                                }
-                            } catch (Exception ve) {
-                                logger.warning("Failed to clear vehicle driver: " + ve.getMessage());
-                            }
-
-                            iterator.remove();
-                            continue;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.warning("Failed to check dismount state: " + e.getMessage());
-            }
-
             // === INPUT INTERCEPTION ===
             processPlayerInput(player, vehicleRef, store);
         }
@@ -390,46 +323,10 @@ public class VehicleMountSystem {
                 }
             }
 
-            // === CTRL KEY (crouching) → SEAT CYCLING ===
-            UUID playerUUID = player.getUuid();
-            Boolean wasCrouching = previousCrouchingState.get(playerUUID);
-            boolean isCrouching = states.crouching;
-
-            // Detect edge: crouching just started (false → true)
-            if (isCrouching && (wasCrouching == null || !wasCrouching)) {
-                // Player just pressed CTRL - cycle to next seat
-                if (vehicleData != null) {
-                    logger.info("[SEAT CYCLE] Player pressed CTRL - attempting to cycle seat");
-
-                    // Get vehicle definition to access seat info
-                    try {
-                        var plugin = com.alexispace.hyvehicles.HytaleVehiclesPlugin.getInstance();
-                        if (plugin != null) {
-                            var registry = plugin.getRegistry();
-                            if (registry != null) {
-                                var vehicle = registry.getVehicleByEntityRef(vehicleRef);
-                                if (vehicle != null) {
-                                    var definition = vehicle.getDefinition();
-                                    boolean seatsPreScaled = definition.blockyModelPath != null && !definition.blockyModelPath.isEmpty();
-                                    boolean success = cycleSeat(
-                                        player, store, vehicleData, definition.seats,
-                                        definition.modelScale, definition.modelYOffset,
-                                        seatsPreScaled
-                                    );
-                                    if (success) {
-                                        logger.info("[SEAT CYCLE] Successfully cycled seat");
-                                    }
-                                }
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.warning("Failed to cycle seat: " + e.getMessage());
-                    }
-                }
-            }
-
-            // Update previous crouching state
-            previousCrouchingState.put(playerUUID, isCrouching);
+            // === CTRL KEY (crouching) → could be used for something else ===
+            // if (states.crouching) {
+            //     // Custom action
+            // }
 
             // Only call setMovementStates if we modified something
             if (statesModified) {

@@ -150,12 +150,6 @@ public abstract class BaseVehicle {
      */
     protected boolean isAnimationPlaying = false;
 
-    /**
-     * Actual movement speed calculated from real position changes.
-     * Used for animation triggers to ensure animation only plays when boat actually moves.
-     */
-    protected float actualMovementSpeed = 0.0f;
-
     // ==================== Constructor ====================
     
     /**
@@ -210,16 +204,10 @@ public abstract class BaseVehicle {
         
         // Apply velocity to position
         applyVelocity(deltaTime);
-
+        
         // Apply angular velocity to rotation
         rotationYaw += angularVelocity * deltaTime;
         rotationYaw = normalizeAngle(rotationYaw);
-
-        // Calculate actual movement speed from position change
-        float dx = position.x - prevPosition.x;
-        float dz = position.z - prevPosition.z;
-        float distanceMoved = (float) Math.sqrt(dx * dx + dz * dz);
-        actualMovementSpeed = deltaTime > 0 ? distanceMoved / deltaTime : 0.0f;
     }
     
     /**
@@ -430,12 +418,9 @@ public abstract class BaseVehicle {
                     velocity.z = 0;
                     angularVelocity = 0;
 
-                    // ALSO zero out actualMovementSpeed to immediately stop animation
-                    actualMovementSpeed = 0.0f;
-
                     System.out.println("[DISMOUNT] Cleared driver for vehicle " + definition.id +
                                      " - seat " + i + ", hasDriver now=" + (driver != null) +
-                                     ", velocity and actualMovementSpeed zeroed");
+                                     ", velocity zeroed");
                 } else {
                     System.out.println("[DISMOUNT] Dismounted passenger (NOT driver) for vehicle " + definition.id +
                                      " - seat " + i);
@@ -523,13 +508,10 @@ public abstract class BaseVehicle {
      * Check if the vehicle should animate.
      * Requires BOTH:
      * - Someone sitting in the boat (driver or passenger)
-     * - Boat ACTUALLY moving above threshold (0.1 blocks/tick = 2 blocks/second)
-     *
-     * Uses actualMovementSpeed (real position changes) instead of calculated velocity
-     * to ensure animation only plays when boat is truly moving, not just when input is pressed.
+     * - Boat moving above threshold (0.1 blocks/tick = 2 blocks/second)
      */
     public boolean shouldAnimate() {
-        return hasDriver() && actualMovementSpeed > 0.1f;
+        return hasDriver() && getHorizontalSpeed() > 0.1f;
     }
 
     /**
@@ -544,14 +526,6 @@ public abstract class BaseVehicle {
      */
     public void setAnimationPlaying(boolean playing) {
         this.isAnimationPlaying = playing;
-    }
-
-    /**
-     * Get the actual movement speed calculated from real position changes.
-     * This is different from getHorizontalSpeed() which returns calculated velocity.
-     */
-    public float getActualMovementSpeed() {
-        return actualMovementSpeed;
     }
 
     // ==================== Helpers ====================
