@@ -266,7 +266,8 @@ public class VehicleTickSystem extends TickingSystem<EntityStore> {
      * Animation plays when moving > 0.1 blocks/tick (2 blocks/second).
      */
     private void updateVehicleAnimation(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
-        float speed = vehicle.getHorizontalSpeed();
+        float calculatedSpeed = vehicle.getHorizontalSpeed();
+        float actualSpeed = vehicle.getActualMovementSpeed();
         boolean hasDriver = vehicle.hasDriver();
         boolean shouldAnimate = vehicle.shouldAnimate();
         boolean isPlaying = vehicle.isAnimationPlaying();
@@ -277,11 +278,12 @@ public class VehicleTickSystem extends TickingSystem<EntityStore> {
 
         // Log when animation state CHANGES or every 60 ticks for active boats
         boolean logThis = (shouldAnimate != isPlaying) ||
-                         (debugTickCounter % 60 == 0 && (hasDriver || speed > 0.01f));
+                         (debugTickCounter % 60 == 0 && (hasDriver || calculatedSpeed > 0.01f));
 
         if (logThis) {
             logger.info("[ANIM] ID:" + vehicleId + " " + vehicle.getDefinition().id +
-                       " speed=" + String.format("%.3f", speed) +
+                       " calcSpeed=" + String.format("%.3f", calculatedSpeed) +
+                       " actualSpeed=" + String.format("%.3f", actualSpeed) +
                        " driver=" + hasDriver +
                        " pass=" + vehicle.getPassengerCount() +
                        " should=" + shouldAnimate +
@@ -292,7 +294,7 @@ public class VehicleTickSystem extends TickingSystem<EntityStore> {
             // Start rowing animation
             try {
                 logger.info("Starting animation for " + vehicle.getDefinition().id +
-                           " (speed=" + String.format("%.2f", speed) +
+                           " (actualSpeed=" + String.format("%.2f", actualSpeed) +
                            ", hasDriver=" + vehicle.hasDriver() + ")");
 
                 String[] possibleNames = {"rowing", "wiosloo", "row", "Rowing", "Row"};
@@ -323,7 +325,7 @@ public class VehicleTickSystem extends TickingSystem<EntityStore> {
             // Stop rowing animation
             try {
                 logger.info("Stopping animation for " + vehicle.getDefinition().id +
-                           " (speed=" + String.format("%.2f", speed) +
+                           " (actualSpeed=" + String.format("%.2f", actualSpeed) +
                            ", hasDriver=" + vehicle.hasDriver() + ")");
                 AnimationUtils.stopAnimation(
                     vehicleRef,
