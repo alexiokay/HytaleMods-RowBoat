@@ -511,6 +511,155 @@ app/src/main/resources/
 
 ---
 
+## Two-Sided Rendering in Blockymodel Files
+
+### The Problem
+
+When creating thin 3D objects like glass panes, fences, or panels that need to look correct from both sides, using `"doubleSided": true` causes **UV mirroring issues** on the back face. This happens because the back face of a 3D box naturally has inverted UV coordinates (it faces the opposite direction).
+
+**Symptoms of the problem:**
+- Borders appear on wrong edges when viewed from the back
+- Textures look mirrored/flipped on one side
+- Left/right borders swap positions depending on viewing angle
+
+### The Solution: Texture Atlas Approach
+
+**Discovered from official Hytale file:** `Panel_256.blockymodel` in `image_frames_assets`
+
+Hytale's official approach uses:
+1. `"doubleSided": false` (NOT true!)
+2. A **texture atlas** with pre-mirrored back texture
+3. Different texture offsets for front and back faces
+
+### Texture Atlas Format
+
+Create a **64x32 pixel** texture atlas:
+- **Left half (x: 0-31):** Normal texture for front face
+- **Right half (x: 32-63):** Pre-mirrored (X-flipped) texture for back face
+
+```
+┌────────────────┬────────────────┐
+│                │                │
+│  FRONT FACE    │   BACK FACE    │
+│  (normal)      │  (X-mirrored)  │
+│                │                │
+│   0-31 px      │   32-63 px     │
+└────────────────┴────────────────┘
+        64 pixels wide
+```
+
+**Example PowerShell to create the atlas:**
+```powershell
+$bmp = New-Object System.Drawing.Bitmap(64, 32)
+
+# LEFT HALF (0-31): Normal texture for front face
+if ($leftBorder) {
+    for ($y = 0; $y -lt 32; $y++) {
+        $bmp.SetPixel(0, $y, $borderColor)
+        $bmp.SetPixel(1, $y, $borderColor)
+    }
+}
+if ($rightBorder) {
+    for ($y = 0; $y -lt 32; $y++) {
+        $bmp.SetPixel(30, $y, $borderColor)
+        $bmp.SetPixel(31, $y, $borderColor)
+    }
+}
+
+# RIGHT HALF (32-63): X-Mirrored texture for back face
+# Mirrored: leftBorder appears on RIGHT side of right half
+if ($leftBorder) {
+    for ($y = 0; $y -lt 32; $y++) {
+        $bmp.SetPixel(62, $y, $borderColor)
+        $bmp.SetPixel(63, $y, $borderColor)
+    }
+}
+# Mirrored: rightBorder appears on LEFT side of right half
+if ($rightBorder) {
+    for ($y = 0; $y -lt 32; $y++) {
+        $bmp.SetPixel(32, $y, $borderColor)
+        $bmp.SetPixel(33, $y, $borderColor)
+    }
+}
+```
+
+### Blockymodel Configuration
+
+```json
+{
+  "nodes": [
+    {
+      "id": "1",
+      "name": "pane",
+      "position": {"x": 0, "y": 0, "z": 0},
+      "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
+      "shape": {
+        "type": "box",
+        "offset": {"x": 0, "y": 16, "z": 0},
+        "stretch": {"x": 1, "y": 1, "z": 1},
+        "settings": {"isPiece": false, "size": {"x": 32, "y": 32, "z": 4}},
+        "textureLayout": {
+          "front": {"offset": {"x": 0, "y": 0}},
+          "back": {"offset": {"x": 32, "y": 0}},
+          "right": {"offset": {"x": 0, "y": 0}},
+          "left": {"offset": {"x": 0, "y": 0}},
+          "top": {"offset": {"x": 0, "y": 0}},
+          "bottom": {"offset": {"x": 0, "y": 0}}
+        },
+        "unwrapMode": "custom",
+        "visible": true,
+        "doubleSided": false,
+        "shadingMode": "flat"
+      }
+    }
+  ],
+  "format": "prop",
+  "lod": "auto"
+}
+```
+
+**Key settings:**
+- `"doubleSided": false` - Renders front and back as separate faces with their own UVs
+- `"front": {"offset": {"x": 0, "y": 0}}` - Front face uses left half of texture (x: 0-31)
+- `"back": {"offset": {"x": 32, "y": 0}}` - Back face uses right half of texture (x: 32-63)
+- `"unwrapMode": "custom"` - Required for manual UV control
+
+### What NOT to Do
+
+**DON'T use `"doubleSided": true` with mirror property:**
+```json
+// WRONG - causes broken textures, dark colors, or garbage pixels
+"textureLayout": {
+  "front": {"offset": {"x": 0, "y": 0}},
+  "back": {"offset": {"x": 0, "y": 0}, "mirror": {"x": true, "y": false}}
+}
+```
+
+**DON'T use two separate nodes for front/back:**
+```json
+// WRONG - causes z-fighting and thickness inconsistencies
+"nodes": [
+  {"name": "front_face", "shape": {..., "doubleSided": false}},
+  {"name": "back_face", "shape": {..., "doubleSided": false}}
+]
+```
+
+**DON'T mix shape types:**
+```json
+// WRONG - "quad" and "box" have different thicknesses
+"nodes": [
+  {"shape": {"type": "quad", ...}},  // 2D plane
+  {"shape": {"type": "box", ...}}    // 3D box
+]
+```
+
+### Reference Files
+
+- **Official Hytale example:** `F:\games\hytale\UserData\Saves\dupoland\image_frames_assets\Common\Blocks\ImageFrames\PanelModels\Panel_256.blockymodel`
+- **Working glass pane models:** `HytaleWindows\app\src\main\resources\Common\Items\GlassPane\*.blockymodel`
+
+---
+
 ## Useful Resources
 
 - [HytaleModding Spawning Guide](https://hytalemodding.dev/en/docs/guides/plugin/spawning-entities)
