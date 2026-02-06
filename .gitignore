@@ -23,5 +23,5 @@ Thumbs.db
 
 # Hytale
 HytaleServer.jar
-server/
+/server/
 logs/

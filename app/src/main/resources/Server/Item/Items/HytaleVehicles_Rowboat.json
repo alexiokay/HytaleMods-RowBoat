@@ -1,0 +1,38 @@
+{
+  "Id": "HytaleVehicles_Rowboat",
+  "TranslationProperties": {
+    "Name": "Rowboat",
+    "Description": "A basic wooden boat for water travel. Right-click to place."
+  },
+  "Icon": "Icons/ItemsGenerated/rowboat_icon.png",
+  "Model": "Items/HytaleVehicles_Rowboat/model.blockymodel",
+  "Texture": "Items/HytaleVehicles_Rowboat/model_texture.png",
+  "Scale": 0.60,
+  "Quality": "Common",
+  "MaxStack": 1,
+  "Categories": ["VehiclesCategory.Boats"],
+
+
+  "Interactions": {
+    "Secondary": {
+      "Interactions": [{
+        "Type": "hyvehicles_spawn_vehicle",
+        "VehicleId": "hyvehicles:rowboat"
+      }]
+    }
+  },
+
+  "Recipe": {
+    "TimeSeconds": 5.0,
+    "Input": [
+      {"ResourceTypeId": "Wood_Planks", "Quantity": 10},
+      {"ItemId": "Ingredient_Stick", "Quantity": 7},
+      {"ItemId": "Ingredient_Fibre", "Quantity": 10}
+    ],
+    "BenchRequirement": [{
+      "Id": "Workbench",
+      "Type": "Crafting",
+      "Categories": ["Workbench_Survival"]
+    }]
+  }
+}
