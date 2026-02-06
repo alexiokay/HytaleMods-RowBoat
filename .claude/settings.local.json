@@ -31,7 +31,11 @@
       "Bash(java -jar cfr.jar:*)",
       "Bash(find:*)",
       "Bash(java -jar cfr-0.152.jar:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:britakee-studios.gitbook.io)",
+      "Bash(\"C:\\\\Program Files\\\\Java\\\\jdk-25\\\\bin\\\\javap.exe\" -cp \"F:\\\\games\\\\hytale\\\\install\\\\release\\\\package\\\\game\\\\latest\\\\Server\\\\HytaleServer.jar\" com.hypixel.hytale.component.AddReason)",
+      "Bash(\"c:\\\\Users\\\\alexispace\\\\Desktop\\\\webdev\\\\hytale\\\\HytaleVehicles\\\\gradlew.bat\" :app:build)",
+      "Bash(\"c:\\\\Users\\\\alexispace\\\\Desktop\\\\webdev\\\\hytale\\\\HytaleVehicles\\\\gradlew.bat\" :app:deployToGame)"
     ]
   }
 }

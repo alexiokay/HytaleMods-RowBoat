@@ -24,11 +24,11 @@ dependencies {
 }
 
 tasks.jar {
-    archiveBaseName.set("HytaleVehicles")
+    archiveBaseName.set("AlexisRowboat")
 }
 
 tasks.shadowJar {
-    archiveBaseName.set("HytaleVehicles")
+    archiveBaseName.set("AlexisRowboat")
     archiveClassifier.set("")
 }
 

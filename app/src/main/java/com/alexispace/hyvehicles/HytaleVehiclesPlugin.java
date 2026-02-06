@@ -37,6 +37,9 @@ import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
 import com.hypixel.hytale.server.core.io.adapter.PlayerPacketWatcher;
 
 import java.util.logging.Level;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * HytaleVehicles - Core vehicle system for Hytale.
@@ -121,6 +124,11 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
      */
     private volatile com.hypixel.hytale.server.core.universe.world.World cachedWorld;
 
+    /**
+     * Scheduler for delayed tasks (e.g., delayed vehicle spawn after world join).
+     */
+    private ScheduledExecutorService scheduler;
+
     public HytaleVehiclesPlugin(JavaPluginInit init) {
         super(init);
         instance = this;
@@ -151,10 +159,13 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
     @Override
     public void setup() {
         getLogger().at(Level.INFO).log("HytaleVehicles is setting up...");
-        
+
         // Create logger wrapper
         this.logger = createLogger();
-        
+
+        // Initialize scheduler for delayed tasks
+        this.scheduler = Executors.newSingleThreadScheduledExecutor();
+
         // Initialize core systems
         this.vehicleRegistry = new VehicleRegistry(logger);
         this.vehicleAPI = new VehicleAPIImpl(vehicleRegistry, logger);
@@ -576,8 +587,7 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
 
     /**
      * Handle player joining world.
-     * Vehicle entities are persisted by Hytale's ECS (VehicleDataComponent).
-     * We create BaseVehicle wrappers on-demand when player interacts with vehicles.
+     * Load vehicles from JSON save file (if they haven't been loaded yet).
      */
     private void onPlayerAddedToWorld(AddPlayerToWorldEvent event) {
         var world = event.getWorld();
@@ -586,10 +596,30 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
         // Cache the world reference for F key mounting
         this.cachedWorld = world;
 
-        // Reset the flag so we know the world is ready
-        vehiclesRespawned.set(true);
-
-        logger.info("Player joined world - vehicle entities will be wrapped on-demand when interacted");
+        // Load vehicles from JSON (only once per world, thread-safe)
+        if (vehiclesRespawned.compareAndSet(false, true)) {
+            // CRITICAL: Delay vehicle spawn by 2 seconds to let client fully join world
+            // EntityRefs become invalid if spawned before GameInstance.StartJoiningWorld completes
+            scheduler.schedule(() -> {
+                world.execute(() -> {
+                    try {
+                        var savedVehicles = vehiclePersistence.loadVehicles();
+                        if (!savedVehicles.isEmpty()) {
+                            logger.info("Auto-loading " + savedVehicles.size() + " vehicles from JSON (after 2s delay)...");
+                            int count = respawnVehiclesInternal(world, savedVehicles);
+                            logger.info("Auto-loaded " + count + " vehicles from JSON persistence");
+                        } else {
+                            logger.info("No saved vehicles to load");
+                        }
+                    } catch (Exception e) {
+                        logger.severe("Failed to auto-load vehicles: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                });
+            }, 2, TimeUnit.SECONDS); // 2 seconds delay
+        } else {
+            logger.info("Player joined world - vehicles already loaded");
+        }
     }
 
     /**
@@ -676,8 +706,7 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
 
     /**
      * Handle player leaving world - cleanup and reset state.
-     * Note: We rely on Hytale's ECS persistence for vehicle entities.
-     * The VehicleDataComponent on each entity is persisted automatically.
+     * Vehicles are saved to JSON in shutdown() method.
      */
     private void onPlayerLeavingWorld(DrainPlayerFromWorldEvent event) {
         Store<EntityStore> store = null;
@@ -714,19 +743,48 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
             mountSystem.clearAllMounts();
         }
 
-        // Clear our BaseVehicle wrappers (ECS entities persist automatically)
-        // Don't call destroy() on vehicles - just clear the tracking
+        // Save vehicles to JSON (before world unloads)
+        saveVehicles();
+
+        // Remove ECS entities so they don't persist in world save
+        // We'll respawn from JSON on next join
+        int vehicleCount = vehicleRegistry.getSpawnedCount();
+        for (var vehicle : vehicleRegistry.getAllVehicles()) {
+            try {
+                // First dismount all passengers
+                vehicle.destroy();
+
+                // Then remove the ECS entity from the world
+                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
+                if (vehicleRef != null && vehicleRef.isValid()) {
+                    if (store == null) {
+                        store = vehicleRef.getStore();
+                    }
+                    if (store != null) {
+                        store.removeEntity(vehicleRef, com.hypixel.hytale.component.RemoveReason.REMOVE);
+                        logger.info("Removed ECS entity for vehicle: " + vehicle.getDefinition().id);
+                    }
+                }
+            } catch (Exception e) {
+                logger.warning("Failed to remove vehicle during world drain: " + e.getMessage());
+            }
+        }
         vehicleRegistry.clearAllTracking();
 
-        vehiclesRespawned.set(false); // Reset so we scan for entities on next join
+        logger.info("Saved and removed " + vehicleCount + " vehicles (will reload from JSON)");
+        vehiclesRespawned.set(false); // Reset so we load vehicles on next join
 
-        // Clear VehicleReconnectSystem cache
-        com.alexispace.hyvehicles.system.VehicleReconnectSystem.clearCache();
+        // Clear VehicleReconnectSystem cache (if still registered)
+        try {
+            com.alexispace.hyvehicles.system.VehicleReconnectSystem.clearCache();
+        } catch (Exception ignored) {
+            // VehicleReconnectSystem may not exist anymore
+        }
 
         // Clear cached world reference
         this.cachedWorld = null;
 
-        logger.info("Cleared vehicle wrappers - ECS entities persist automatically");
+        logger.info("Cleared vehicle wrappers - vehicles will be saved to JSON on shutdown");
     }
 
     /**
@@ -737,13 +795,40 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
         int successCount = 0;
         for (var data : savedVehicles) {
             try {
-                var pos = new com.alexispace.hyvehicles.util.Vec3(data.x, data.y, data.z);
+                // Use exact saved position - don't adjust unless clearly invalid
+                float adjustedY = data.y;
+
+                // Only adjust if clearly invalid (underground or too high)
+                if (adjustedY < -20) {
+                    logger.warning("Vehicle " + data.definitionId + " saved at invalid Y=" + adjustedY + ", adjusting to 65");
+                    adjustedY = 65;
+                } else if (adjustedY > 320) {
+                    logger.warning("Vehicle " + data.definitionId + " saved at invalid Y=" + adjustedY + ", adjusting to 100");
+                    adjustedY = 100;
+                }
+
+                var pos = new com.alexispace.hyvehicles.util.Vec3(data.x, adjustedY, data.z);
+                logger.info("Spawning " + data.definitionId + " at (" + pos.x + ", " + pos.y + ", " + pos.z + ")");
+
                 var handle = vehicleAPI.spawnVehicle(data.definitionId, pos, data.yaw, world);
                 if (handle != null) {
                     successCount++;
+                    logger.info("Successfully spawned " + data.definitionId);
+
+                    // CRITICAL: Verify the vehicle has a valid wrapper with entityRef
+                    // Without this, water vehicles sink and die (no buoyancy physics)
+                    com.alexispace.hyvehicles.entity.BaseVehicle vehicle = handle.getVehicle();
+                    if (vehicle != null && vehicle.getEntityRef() != null) {
+                        logger.info("Vehicle has valid wrapper and entityRef");
+                    } else {
+                        logger.warning("WARNING: Vehicle spawned but wrapper/ref is invalid!");
+                    }
+                } else {
+                    logger.warning("Failed to spawn " + data.definitionId + " - handle is null");
                 }
             } catch (Exception e) {
                 logger.warning("Failed to respawn " + data.definitionId + ": " + e.getMessage());
+                e.printStackTrace();
             }
         }
         // Clear save file after respawn
@@ -904,13 +989,40 @@ public class HytaleVehiclesPlugin extends JavaPlugin {
         // Save all spawned vehicles to JSON
         saveVehicles();
 
-        // Destroy all spawned vehicle wrappers
+        // Remove ECS entities and destroy vehicle wrappers
         int vehicleCount = vehicleRegistry.getSpawnedCount();
         for (var vehicle : vehicleRegistry.getAllVehicles()) {
-            vehicle.destroy();
+            try {
+                // First dismount all passengers
+                vehicle.destroy();
+
+                // Then remove the ECS entity from the world
+                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
+                if (vehicleRef != null && vehicleRef.isValid()) {
+                    Store<EntityStore> store = vehicleRef.getStore();
+                    if (store != null) {
+                        store.removeEntity(vehicleRef, com.hypixel.hytale.component.RemoveReason.REMOVE);
+                        logger.info("Removed ECS entity for vehicle: " + vehicle.getDefinition().id);
+                    }
+                }
+            } catch (Exception e) {
+                logger.warning("Failed to remove vehicle during shutdown: " + e.getMessage());
+            }
         }
 
-        logger.info("Cleaned up " + vehicleCount + " vehicle wrappers");
+        logger.info("Cleaned up " + vehicleCount + " vehicles (wrappers + ECS entities)");
+
+        // Shutdown scheduler
+        if (scheduler != null) {
+            scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+            }
+        }
     }
 
     /**

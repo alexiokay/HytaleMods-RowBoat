@@ -1,8 +1,8 @@
 {
   "Group": "com.alexispace",
-  "Name": "HytaleVehicles",
+  "Name": "Alexi's RowBoat",
   "Version": "1.0.0",
-  "Description": "Core vehicle system for Hytale - adds rideable boats, carts, cars and more. Provides API for content packs to add custom vehicles.",
+  "Description": "Adds rideable rowboats with working rowing animations to Hytale.",
   "Authors": [
     {
       "Name": "alexispace"
