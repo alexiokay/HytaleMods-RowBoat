@@ -511,6 +511,87 @@ app/src/main/resources/
 
 ---
 
+## Crafting Recipes
+
+### Recipe JSON Structure
+
+Add a `"Recipe"` field to any item JSON to make it craftable:
+
+```json
+"Recipe": {
+  "TimeSeconds": 5.0,
+  "Input": [
+    {"ItemId": "Ingredient_Stick", "Quantity": 2},
+    {"ResourceTypeId": "Wood_Planks", "Quantity": 5}
+  ],
+  "BenchRequirement": [{
+    "Id": "Workbench",
+    "Type": "Crafting",
+    "Categories": ["Workbench_Survival"]
+  }]
+}
+```
+
+### ItemId vs ResourceTypeId
+
+Recipe inputs support two modes:
+- **`ItemId`** — requires a specific item (e.g., `"Ingredient_Stick"`)
+- **`ResourceTypeId`** — accepts any item in a category (e.g., `"Wood_Planks"` accepts all plank types)
+
+ResourceTypes are defined in `Server/Item/ResourceTypes/*.json`. Each item specifies which ResourceTypes it belongs to via a `"ResourceTypes"` array.
+
+### Common Item IDs (Verified)
+
+| In-game Name | Correct ItemId |
+|---|---|
+| Stick | `Ingredient_Stick` |
+| Plant Fibre | `Ingredient_Fibre` (British spelling!) |
+| Sand | `Soil_Sand` |
+| Bronze Bar | `Ingredient_Bar_Bronze` |
+
+### Common ResourceTypeIds
+
+| Category | ResourceTypeId |
+|---|---|
+| Any wood planks | `Wood_Planks` |
+| Any wood trunk | `Wood_Trunk` |
+| All wood | `Wood_All` |
+| Any metal bar | `Metal_Bars` |
+| Any rock | `Rock` |
+| Any fish | `Fish` |
+| Any meat | `Meat` |
+
+### Workbench Types
+
+**Survival Workbench:**
+```json
+"BenchRequirement": [{
+  "Id": "Workbench",
+  "Type": "Crafting",
+  "Categories": ["Workbench_Survival"]
+}]
+```
+
+**Builder's Workbench:**
+```json
+"BenchRequirement": [{
+  "Id": "Builders",
+  "Type": "StructuralCrafting",
+  "Categories": ["Window"]
+}]
+```
+
+Builder's Workbench categories include: `Wall`, `Platform`, `Stairs`, `HalfSlab`, `Beam`, `Decorative`, `Ornate`, `Roof`, `Pillar`, `Door`, `Window`, `WoodPlanks`, and more (defined in `Bench_Builders.json`).
+
+### Gotchas
+
+- **No `Output` object!** The `Output` field expects an array `[...]`, not `{...}`. Passing `"Output": {"Quantity": 4}` causes a codec decode error. Default output is 1 item.
+- **Item IDs use underscores and specific prefixes** — don't guess! Common patterns: `Ingredient_*`, `Soil_*`, `Wood_*_Planks`
+- **`Ingredient_Fibre`** uses British spelling (not "Fiber")
+- **ResourceTypeId naming** follows pattern: `Wood_Planks`, `Wood_Trunk`, `Rock_Stone`, etc.
+
+---
+
 ## Two-Sided Rendering in Blockymodel Files
 
 ### The Problem
