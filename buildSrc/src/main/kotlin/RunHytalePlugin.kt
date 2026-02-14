@@ -113,8 +113,10 @@ class RunHytalePlugin : Plugin<Project> {
                 description = "Deploy plugin to your Hytale game mods folder"
 
                 val shadowJarTask = project.tasks.named("shadowJar")
+                val jarTask = project.tasks.named("jar")
                 dependsOn(shadowJarTask)
                 inputs.files(shadowJarTask)
+                inputs.files(jarTask)
 
                 doFirst {
                     if (extension.serverPath.isEmpty()) {

@@ -1,0 +1,11 @@
+{
+  "Description": "Movement config for vehicle drivers - allows walking but prevents jumping",
+  "JumpForce": 0,
+  "WalkSpeed": 1.0,
+  "RunSpeed": 1.0,
+  "SprintSpeed": 1.0,
+  "CanJump": false,
+  "CanWalk": true,
+  "CanRun": true,
+  "CanSprint": true
+}

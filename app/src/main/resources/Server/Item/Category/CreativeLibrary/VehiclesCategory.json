@@ -1,0 +1,23 @@
+{
+  "Id": "Vehicles",
+  "Name": "ui.itemcategory.vehicles",
+  "Icon": "Icons/ItemCategories/Vehicles.png",
+  "Order": 100,
+  "Children": [
+    {
+      "Id": "Boats",
+      "Name": "ui.itemcategory.vehicles_boats",
+      "Icon": "Icons/ItemCategories/Vehicles_Boats.png"
+    },
+    {
+      "Id": "Carts",
+      "Name": "ui.itemcategory.vehicles_carts",
+      "Icon": "Icons/ItemCategories/Vehicles_Carts.png"
+    },
+    {
+      "Id": "Cars",
+      "Name": "ui.itemcategory.vehicles_cars",
+      "Icon": "Icons/ItemCategories/Vehicles_Cars.png"
+    }
+  ]
+}

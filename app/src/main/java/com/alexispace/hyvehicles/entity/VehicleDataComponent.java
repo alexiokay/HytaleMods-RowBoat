@@ -7,120 +7,94 @@ import com.hypixel.hytale.component.Component;
 import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
-/**
- * Component that stores vehicle metadata on the entity itself.
- * This data is persisted by Hytale's ECS along with the entity,
- * so it survives world reloads automatically.
- *
- * <p>Contains:</p>
- * <ul>
- *   <li>definitionId - The vehicle definition ID (e.g., "hyvehicles:simple_boat")</li>
- *   <li>dropItemId - The item to drop when destroyed</li>
- *   <li>dropQuantity - How many items to drop</li>
- * </ul>
- *
- * @since 1.0
- * @author alexispace
- */
+import java.util.HashSet;
+import java.util.Set;
+
 public class VehicleDataComponent implements Component<EntityStore> {
 
-    // Component type - set during plugin registration
     private static ComponentType<EntityStore, VehicleDataComponent> componentType;
 
-    // Data fields (persisted)
     private String definitionId;
     private String dropItemId;
     private int dropQuantity;
+    private float posX;
+    private float posY;
+    private float posZ;
+    private float rotationYaw;
 
-    // Transient control flags (not persisted, set each tick)
     private transient boolean braking;
     private transient boolean boosting;
 
-    // Transient seat occupancy tracking (not persisted)
-    private transient java.util.Set<Integer> occupiedSeats = new java.util.HashSet<>();
+    private transient Set<Integer> occupiedSeats = new HashSet<>();
 
-    /**
-     * BuilderCodec for serialization/persistence.
-     * This tells Hytale how to save/load this component.
-     */
-    public static final BuilderCodec<VehicleDataComponent> CODEC = createCodec();
+    public static final BuilderCodec<VehicleDataComponent> CODEC;
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static BuilderCodec<VehicleDataComponent> createCodec() {
-        BuilderCodec.Builder<VehicleDataComponent> builder = BuilderCodec.builder(
-            VehicleDataComponent.class,
-            VehicleDataComponent::new
-        );
-
-        return ((BuilderCodec.Builder<VehicleDataComponent>)
-            builder.appendInherited(
-                new KeyedCodec<>("DefinitionId", Codec.STRING, false),
-                (VehicleDataComponent c, String v) -> c.definitionId = v != null ? v : "",
-                (VehicleDataComponent c) -> c.definitionId,
-                (VehicleDataComponent c, VehicleDataComponent p) -> c.definitionId = p.definitionId
-            ).add()
-            .appendInherited(
-                new KeyedCodec<>("DropItemId", Codec.STRING, false),
-                (VehicleDataComponent c, String v) -> c.dropItemId = v != null ? v : "",
-                (VehicleDataComponent c) -> c.dropItemId,
-                (VehicleDataComponent c, VehicleDataComponent p) -> c.dropItemId = p.dropItemId
-            ).add()
-            .appendInherited(
-                new KeyedCodec<>("DropQuantity", Codec.INTEGER, false),
-                (VehicleDataComponent c, Integer v) -> c.dropQuantity = v != null ? v : 1,
-                (VehicleDataComponent c) -> c.dropQuantity,
-                (VehicleDataComponent c, VehicleDataComponent p) -> c.dropQuantity = p.dropQuantity
-            ).add()
-        ).build();
+        // CRITICAL: DO NOT persist position fields in ECS!
+        // Hytale's persistence system restores entities from this codec,
+        // which causes teleportation to spawn position on dismount.
+        // Position is managed by JSON persistence only!
+        BuilderCodec.Builder builder = BuilderCodec.builder(VehicleDataComponent.class, VehicleDataComponent::new);
+        return ((BuilderCodec.Builder<VehicleDataComponent>) builder.appendInherited(
+            new KeyedCodec("DefinitionId", Codec.STRING, false),
+            (c, v) -> { ((VehicleDataComponent) c).definitionId = v != null ? (String) v : ""; },
+            c -> ((VehicleDataComponent) c).definitionId,
+            (c, p) -> { ((VehicleDataComponent) c).definitionId = ((VehicleDataComponent) p).definitionId; }
+        ).add().appendInherited(
+            new KeyedCodec("DropItemId", Codec.STRING, false),
+            (c, v) -> { ((VehicleDataComponent) c).dropItemId = v != null ? (String) v : ""; },
+            c -> ((VehicleDataComponent) c).dropItemId,
+            (c, p) -> { ((VehicleDataComponent) c).dropItemId = ((VehicleDataComponent) p).dropItemId; }
+        ).add().appendInherited(
+            new KeyedCodec("DropQuantity", Codec.INTEGER, false),
+            (c, v) -> { ((VehicleDataComponent) c).dropQuantity = v != null ? (Integer) v : 1; },
+            c -> ((VehicleDataComponent) c).dropQuantity,
+            (c, p) -> { ((VehicleDataComponent) c).dropQuantity = ((VehicleDataComponent) p).dropQuantity; }
+        ).add()).build();
+        // REMOVED: PosX, PosY, PosZ, RotationYaw persistence
+        // These fields still exist for in-memory tracking, but are NOT saved to ECS
     }
 
-    /**
-     * Default constructor (required for codec/registration).
-     */
     public VehicleDataComponent() {
         this.definitionId = "";
         this.dropItemId = "";
         this.dropQuantity = 1;
     }
 
-    /**
-     * Constructor with values.
-     */
     public VehicleDataComponent(String definitionId, String dropItemId, int dropQuantity) {
         this.definitionId = definitionId != null ? definitionId : "";
         this.dropItemId = dropItemId != null ? dropItemId : "";
         this.dropQuantity = dropQuantity;
     }
 
-    /**
-     * Copy constructor for clone().
-     */
     public VehicleDataComponent(VehicleDataComponent other) {
         this.definitionId = other.definitionId;
         this.dropItemId = other.dropItemId;
         this.dropQuantity = other.dropQuantity;
+        this.posX = other.posX;
+        this.posY = other.posY;
+        this.posZ = other.posZ;
+        this.rotationYaw = other.rotationYaw;
     }
 
-    // Required by Component interface
     @Override
     public Component<EntityStore> clone() {
         return new VehicleDataComponent(this);
     }
 
-    // Getters
     public String getDefinitionId() {
-        return definitionId;
+        return this.definitionId;
     }
 
     public String getDropItemId() {
-        return dropItemId;
+        return this.dropItemId;
     }
 
     public int getDropQuantity() {
-        return dropQuantity;
+        return this.dropQuantity;
     }
 
-    // Setters (needed for codec)
     public void setDefinitionId(String definitionId) {
         this.definitionId = definitionId;
     }
@@ -133,10 +107,24 @@ public class VehicleDataComponent implements Component<EntityStore> {
         this.dropQuantity = dropQuantity;
     }
 
-    // === Control flags (transient, set each tick by VehicleMountSystem) ===
+    public float getPosX() { return this.posX; }
+    public float getPosY() { return this.posY; }
+    public float getPosZ() { return this.posZ; }
+    public float getRotationYaw() { return this.rotationYaw; }
+
+    public void setPosition(float x, float y, float z, float yaw) {
+        this.posX = x;
+        this.posY = y;
+        this.posZ = z;
+        this.rotationYaw = yaw;
+    }
+
+    public boolean hasStoredPosition() {
+        return this.posX != 0f || this.posY != 0f || this.posZ != 0f;
+    }
 
     public boolean isBraking() {
-        return braking;
+        return this.braking;
     }
 
     public void setBraking(boolean braking) {
@@ -144,94 +132,61 @@ public class VehicleDataComponent implements Component<EntityStore> {
     }
 
     public boolean isBoosting() {
-        return boosting;
+        return this.boosting;
     }
 
     public void setBoosting(boolean boosting) {
         this.boosting = boosting;
     }
 
-    /**
-     * Reset control flags. Call at the start of each tick.
-     */
     public void resetControlFlags() {
         this.braking = false;
         this.boosting = false;
     }
 
-    // === Seat occupancy tracking ===
-
-    /**
-     * Find the first available (unoccupied) seat index.
-     * @param totalSeats Total number of seats on this vehicle
-     * @return Seat index (0-based), or -1 if all seats occupied
-     */
     public int findAvailableSeat(int totalSeats) {
         for (int i = 0; i < totalSeats; i++) {
-            if (!occupiedSeats.contains(i)) {
+            if (!this.occupiedSeats.contains(i)) {
                 return i;
             }
         }
-        return -1; // All seats occupied
+        return -1;
     }
 
-    /**
-     * Mark a seat as occupied.
-     */
     public void occupySeat(int seatIndex) {
-        occupiedSeats.add(seatIndex);
+        this.occupiedSeats.add(seatIndex);
     }
 
-    /**
-     * Mark a seat as vacant.
-     */
     public void vacateSeat(int seatIndex) {
-        occupiedSeats.remove(seatIndex);
+        this.occupiedSeats.remove(seatIndex);
     }
 
-    /**
-     * Check if a seat is occupied.
-     */
     public boolean isSeatOccupied(int seatIndex) {
-        return occupiedSeats.contains(seatIndex);
+        return this.occupiedSeats.contains(seatIndex);
     }
 
-    /**
-     * Get number of occupied seats.
-     */
     public int getOccupiedSeatCount() {
-        return occupiedSeats.size();
+        return this.occupiedSeats.size();
     }
 
-    /**
-     * Clear all seat occupancy (e.g., when vehicle is destroyed).
-     */
     public void clearAllSeats() {
-        occupiedSeats.clear();
+        this.occupiedSeats.clear();
     }
 
-    /**
-     * Get the component type. Must be called AFTER registration in plugin setup().
-     */
     public static ComponentType<EntityStore, VehicleDataComponent> getComponentType() {
         return componentType;
     }
 
-    /**
-     * Set the component type (called during plugin registration).
-     */
     public static void setComponentType(ComponentType<EntityStore, VehicleDataComponent> type) {
         componentType = type;
     }
 
     @Override
     public String toString() {
-        return "VehicleDataComponent{" +
-                "definitionId='" + definitionId + '\'' +
-                ", dropItemId='" + dropItemId + '\'' +
-                ", dropQuantity=" + dropQuantity +
-                ", braking=" + braking +
-                ", boosting=" + boosting +
-                '}';
+        return "VehicleDataComponent{definitionId='" + this.definitionId + "', dropItemId='" + this.dropItemId + "', dropQuantity=" + this.dropQuantity + ", braking=" + this.braking + ", boosting=" + this.boosting + "}";
+    }
+
+    static {
+        CODEC = VehicleDataComponent.createCodec();
     }
 }

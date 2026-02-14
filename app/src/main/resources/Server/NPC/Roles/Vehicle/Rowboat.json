@@ -1,0 +1,132 @@
+{
+  "Type": "Generic",
+  "Appearance": "Rowboat_Model",
+  "DropList": "Drop_Rowboat",
+  "BreathesInWater": true,
+  "MotionControllerList": [
+    {
+      "Type": "Dive",
+      "MaxSwimSpeed": 3,
+      "MaxDiveSpeed": 2,
+      "MaxSinkSpeed": 0.3,
+      "Gravity": 5,
+      "Acceleration": 2,
+      "MaxRotationSpeed": 360,
+      "SwimDepth": 1,
+      "DesiredDepthWeight": 0.8,
+      "MinDepthBelowSurface": 0.1,
+      "SinkRatio": 0.1
+    }
+  ],
+  "MaxHealth": {
+    "Compute": "MaxHealth"
+  },
+  "Parameters": {
+    "MaxHealth": {
+      "Value": 40,
+      "Description": "Max health for simple boat"
+    }
+  },
+  "IsMemory": false,
+  "IsMountable": true,
+  "MountAnchorX": 0,
+  "MountAnchorY": 0.5,
+  "MountAnchorZ": 0,
+  "MountMovementConfig": "Montar",
+  "Instructions": [
+    {
+      "Instructions": [
+        {
+          "Sensor": {
+            "Type": "Self",
+            "Filters": [
+              {
+                "Type": "MovementState",
+                "State": "WALKING"
+              }
+            ]
+          },
+          "Actions": [
+            {
+              "Type": "PlayAnimation",
+              "Slot": "Action",
+              "Animation": "rowing",
+              "Once": false
+            }
+          ]
+        },
+        {
+          "Sensor": {
+            "Type": "Self",
+            "Filters": [
+              {
+                "Type": "MovementState",
+                "State": "RUNNING"
+              }
+            ]
+          },
+          "Actions": [
+            {
+              "Type": "PlayAnimation",
+              "Slot": "Action",
+              "Animation": "rowing",
+              "Once": false
+            }
+          ]
+        },
+        {
+          "Sensor": {
+            "Type": "Self",
+            "Filters": [
+              {
+                "Type": "MovementState",
+                "State": "IDLE"
+              }
+            ]
+          },
+          "Actions": [
+            {
+              "Type": "PlayAnimation",
+              "Slot": "Action",
+              "Animation": "rowing",
+              "Once": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "InteractionInstruction": {
+    "Enabled": true,
+    "Instructions": [
+      {
+        "Continue": true,
+        "Sensor": {
+          "Type": "Any"
+        },
+        "Actions": [
+          {
+            "Type": "SetInteractable",
+            "Interactable": true,
+            "Hint": "server.interactionHints.mount"
+          }
+        ]
+      },
+      {
+        "Sensor": {
+          "Type": "HasInteracted"
+        },
+        "Actions": [
+          {
+            "Type": "Mount",
+            "AnchorX": 0,
+            "AnchorY": 0.5,
+            "AnchorZ": 0,
+            "MovementConfig": "Montar"
+          }
+        ]
+      }
+    ]
+  },
+  "NameTranslationKey": "server.npcRoles.Rowboat.name"
+}

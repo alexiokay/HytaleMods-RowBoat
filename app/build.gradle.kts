@@ -7,7 +7,7 @@ plugins {
 apply<RunHytalePlugin>()
 
 group = "com.alexispace"
-version = "1.0.2"
+version = "1.0.4"
 
 java {
     toolchain {
@@ -16,8 +16,8 @@ java {
 }
 
 dependencies {
-    // Hytale Server API
-    compileOnly("com.hypixel.hytale:Server:+")
+    // Hytale Server API - use local installed JAR (Maven repo lags behind game updates)
+    compileOnly(files("F:/games/hytale/install/release/package/game/latest/Server/HytaleServer.jar"))
 
     // JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")

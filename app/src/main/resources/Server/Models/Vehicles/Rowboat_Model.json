@@ -1,0 +1,36 @@
+{
+  "Model": "Items/HytaleVehicles_Rowboat/new_boat.blockymodel",
+  "Texture": "Items/HytaleVehicles_Rowboat/dark_wood_brighter.png",
+  "EyeHeight": 1,
+  "HitBox": {
+    "Max": {
+      "X": 0.75,
+      "Y": 0.6,
+      "Z": 1.25
+    },
+    "Min": {
+      "X": -0.75,
+      "Y": 0,
+      "Z": -1.25
+    }
+  },
+  "MinScale": 1.0,
+  "MaxScale": 1.0,
+  "PhysicsValues": {
+    "Mass": 1
+  },
+  "AnimationSets": {
+    "rowing": {
+      "Animations": [
+        {
+          "Animation": "Items/Vehicles/wiosloo.blockyanim",
+          "Looping": true
+        }
+      ]
+    }
+  },
+  "Light": {
+    "Color": "#a97",
+    "Radius": 0
+  }
+}

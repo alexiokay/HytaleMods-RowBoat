@@ -25,3 +25,14 @@ Thumbs.db
 HytaleServer.jar
 /server/
 logs/
+
+# Temp/Debug files
+beta_decompiled/
+temp_beta/
+*_jar_contents.txt
+*.diff
+commit_*.java
+nul
+*_writer.js
+C???UsersalexispaceDesktopwebdevhytaleHytaleVehiclestemp_jar_list.txt
+/manifest.json

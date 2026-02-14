@@ -1,0 +1,5 @@
+{
+  "Id": "HytaleVehicles_Hard",
+  "CollisionType": "Hard",
+  "SoftCollisionOffsetRatio": 1.0
+}

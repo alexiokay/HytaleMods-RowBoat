@@ -2,1137 +2,876 @@ package com.alexispace.hyvehicles;
 
 import com.alexispace.hyvehicles.api.VehicleAPI;
 import com.alexispace.hyvehicles.api.VehicleAPIImpl;
+import com.alexispace.hyvehicles.api.VehicleHandle;
+import com.alexispace.hyvehicles.api.VehicleTypeCreator;
 import com.alexispace.hyvehicles.command.HvCommand;
 import com.alexispace.hyvehicles.config.VehicleDeployableConfig;
 import com.alexispace.hyvehicles.definition.SeatDefinition;
 import com.alexispace.hyvehicles.definition.VehicleDefinition;
+import com.alexispace.hyvehicles.entity.BaseVehicle;
 import com.alexispace.hyvehicles.entity.VehicleDataComponent;
 import com.alexispace.hyvehicles.entity.VehicleEntityBridge;
-import com.hypixel.hytale.builtin.deployables.config.DeployableConfig;
-import com.hypixel.hytale.component.ComponentType;
-import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
-import com.alexispace.hyvehicles.interaction.SpawnVehicleInteraction;
 import com.alexispace.hyvehicles.interaction.SpawnNPCBoatInteraction;
+import com.alexispace.hyvehicles.interaction.SpawnVehicleInteraction;
 import com.alexispace.hyvehicles.loader.VehicleLoader;
+import com.alexispace.hyvehicles.persistence.VehiclePersistence;
 import com.alexispace.hyvehicles.registry.BoatCreator;
 import com.alexispace.hyvehicles.registry.VehicleRegistry;
-import com.alexispace.hyvehicles.persistence.VehiclePersistence;
+import com.alexispace.hyvehicles.system.VehicleControlSystem;
 import com.alexispace.hyvehicles.system.VehicleDeathSystem;
+import com.alexispace.hyvehicles.system.VehicleMountSystem;
+import com.alexispace.hyvehicles.system.VehicleReconnectSystem;
+import com.alexispace.hyvehicles.system.VehicleTickSystem;
+import com.alexispace.hyvehicles.util.Vec3;
 import com.alexispace.hyvehicles.util.VehicleLogger;
+import com.hypixel.hytale.builtin.deployables.config.DeployableConfig;
+import com.hypixel.hytale.component.ComponentType;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.RemoveReason;
+import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.math.vector.Vector3d;
+import com.hypixel.hytale.math.vector.Vector3f;
+
+import com.hypixel.hytale.protocol.InteractionType;
+import com.hypixel.hytale.protocol.Packet;
+import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
+import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChains;
 import com.hypixel.hytale.server.core.event.events.player.AddPlayerToWorldEvent;
 import com.hypixel.hytale.server.core.event.events.player.DrainPlayerFromWorldEvent;
+import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
+import com.hypixel.hytale.server.core.io.adapter.PlayerPacketWatcher;
+import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.modules.interaction.interaction.config.Interaction;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
-import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import com.alexispace.hyvehicles.system.VehicleMountSystem;
-// Packet listener imports for F key interaction
-import com.hypixel.hytale.protocol.Packet;
-import com.hypixel.hytale.protocol.InteractionType;
-import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChains;
-import com.hypixel.hytale.protocol.packets.interaction.SyncInteractionChain;
-import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
-import com.hypixel.hytale.server.core.io.adapter.PlayerPacketWatcher;
-
-import java.util.logging.Level;
+import com.hypixel.hytale.server.core.universe.world.World;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
 
-/**
- * HytaleVehicles - Core vehicle system for Hytale.
- * 
- * <p>This plugin provides the foundation for vehicle mods in Hytale:</p>
- * <ul>
- *   <li>JSON-driven vehicle definitions</li>
- *   <li>Extensible vehicle type system</li>
- *   <li>Integration with Hytale's mount system</li>
- *   <li>Physics for water and ground vehicles</li>
- * </ul>
- * 
- * <h2>For Content Pack Developers</h2>
- * <pre>{@code
- * // In your pack's plugin:
- * VehicleAPI api = HytaleVehiclesPlugin.getAPI();
- * 
- * // Register vehicles from JSON
- * api.registerVehicle(myBoatDefinition);
- * 
- * // Or register custom types
- * api.registerVehicleCreator("HOVERCRAFT", new MyHovercraftCreator());
- * }</pre>
- * 
- * <h2>Architecture (Inspired by MTS)</h2>
- * <pre>
- * HytaleVehicles
- * ├── API Layer (VehicleAPI, VehicleTypeCreator)
- * ├── Entity Layer (BaseVehicle, WaterVehicle, GroundVehicle)
- * ├── Definition Layer (VehicleDefinition - JSON)
- * └── Registry Layer (VehicleRegistry)
- * </pre>
- * 
- * @since 1.0
- * @author alexispace
- * @see VehicleAPI
- */
-public class HytaleVehiclesPlugin extends JavaPlugin {
-    
-    /**
-     * Singleton instance for static access.
-     */
+public class HytaleVehiclesPlugin
+extends JavaPlugin {
     private static HytaleVehiclesPlugin instance;
-    
-    /**
-     * The vehicle registry.
-     */
     private VehicleRegistry vehicleRegistry;
-    
-    /**
-     * The public API.
-     */
     private VehicleAPIImpl vehicleAPI;
-    
-    /**
-     * Vehicle JSON loader.
-     */
     private VehicleLoader vehicleLoader;
-    
-    /**
-     * Our logger wrapper.
-     */
     private VehicleLogger logger;
-
-    /**
-     * JSON persistence for vehicles.
-     */
     private VehiclePersistence vehiclePersistence;
-
-    /**
-     * Vehicle mount system for F key mounting.
-     */
     private VehicleMountSystem mountSystem;
-
-    /**
-     * Thread-safe flag to prevent multiple respawns.
-     */
-    private final java.util.concurrent.atomic.AtomicBoolean vehiclesRespawned = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-    /**
-     * Cached world reference for F key mounting.
-     */
-    private volatile com.hypixel.hytale.server.core.universe.world.World cachedWorld;
-
-    /**
-     * Scheduler for delayed tasks (e.g., delayed vehicle spawn after world join).
-     */
+    private final AtomicBoolean vehiclesRespawned = new AtomicBoolean(false);
+    private volatile World cachedWorld;
     private ScheduledExecutorService scheduler;
+    private volatile boolean vehiclesSavedForShutdown = false;
 
     public HytaleVehiclesPlugin(JavaPluginInit init) {
         super(init);
         instance = this;
     }
-    
-    /**
-     * Create a VehicleLogger that wraps Hytale's logger.
-     */
+
     private VehicleLogger createLogger() {
         return new VehicleLogger() {
             @Override
             public void info(String message) {
-                getLogger().at(Level.INFO).log(message);
+                HytaleVehiclesPlugin.this.getLogger().at(Level.INFO).log(message);
             }
-            
+
             @Override
             public void warning(String message) {
-                getLogger().at(Level.WARNING).log(message);
+                HytaleVehiclesPlugin.this.getLogger().at(Level.WARNING).log(message);
             }
-            
+
             @Override
             public void severe(String message) {
-                getLogger().at(Level.SEVERE).log(message);
+                HytaleVehiclesPlugin.this.getLogger().at(Level.SEVERE).log(message);
             }
         };
     }
-    
-    @Override
+
     public void setup() {
-        getLogger().at(Level.INFO).log("HytaleVehicles is setting up...");
-
-        // Create logger wrapper
-        this.logger = createLogger();
-
-        // Initialize scheduler for delayed tasks
+        this.getLogger().at(Level.INFO).log("HytaleVehicles is setting up...");
+        this.logger = this.createLogger();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
-
-        // Initialize core systems
-        this.vehicleRegistry = new VehicleRegistry(logger);
-        this.vehicleAPI = new VehicleAPIImpl(vehicleRegistry, logger);
-        this.vehicleLoader = new VehicleLoader(logger);
-        this.vehicleLoader.setResourceClassLoader(getClass().getClassLoader());
-
-        // Register VehicleDataComponent with Hytale's ECS
-        // This component is persisted ON the entity by Hytale, so it survives world reloads
-        registerVehicleDataComponent();
-
-        // Register built-in vehicle types (like MTS's addItemPartCreator calls)
-        registerBuiltInTypes();
-
-        // Register custom interactions for spawn items
-        registerInteractions();
-
-        // Register commands
-        registerCommands();
-
-        // Load built-in example vehicle
-        loadBuiltInVehicles();
-
-        // Register death system to detect when vehicles are destroyed
-        getEntityStoreRegistry().registerSystem(new VehicleDeathSystem());
-        logger.info("Registered VehicleDeathSystem for real-time death detection");
-
-        // Register reconnect system to restore BaseVehicle wrappers for ECS-persisted entities
-        getEntityStoreRegistry().registerSystem(new com.alexispace.hyvehicles.system.VehicleReconnectSystem());
-        logger.info("Registered VehicleReconnectSystem for ECS persistence");
-
-        // Register tick system for vehicle physics and input processing
-        getEntityStoreRegistry().registerSystem(new com.alexispace.hyvehicles.system.VehicleTickSystem());
-        logger.info("Registered VehicleTickSystem for physics and input processing");
-
-        // Register control system for steering based on player look direction
-        getEntityStoreRegistry().registerSystem(new com.alexispace.hyvehicles.system.VehicleControlSystem());
-        logger.info("Registered VehicleControlSystem for steering");
-
-        // Initialize JSON persistence
-        java.nio.file.Path saveDir = getDataDirectory().resolve("saves");
-        this.vehiclePersistence = new VehiclePersistence(logger, saveDir);
-        logger.info("Vehicle save directory: " + saveDir.toAbsolutePath());
-
-        // Initialize mount system for F key mounting
-        this.mountSystem = new VehicleMountSystem(logger);
-        logger.info("Initialized VehicleMountSystem");
-
-        // Register event to respawn vehicles when player joins world
-        // Uses World.execute() to schedule spawn on world thread (fixes threading issue)
-        getEventRegistry().registerGlobal(AddPlayerToWorldEvent.class, this::onPlayerAddedToWorld);
-        logger.info("Registered AddPlayerToWorldEvent for auto-respawn");
-
-        // Register event to save vehicles when player leaves world
-        getEventRegistry().registerGlobal(DrainPlayerFromWorldEvent.class, this::onPlayerLeavingWorld);
-        logger.info("Registered DrainPlayerFromWorldEvent for auto-save");
-
-        // Register packet listener for F key mounting (SyncInteractionChains packet ID 290)
-        registerFKeyPacketListener();
-        logger.info("Registered packet listener for F key mounting");
-
-        getLogger().at(Level.INFO).log("HytaleVehicles setup complete");
+        this.vehicleRegistry = new VehicleRegistry(this.logger);
+        this.vehicleAPI = new VehicleAPIImpl(this.vehicleRegistry, this.logger);
+        this.vehicleLoader = new VehicleLoader(this.logger);
+        this.vehicleLoader.setResourceClassLoader(this.getClass().getClassLoader());
+        this.registerVehicleDataComponent();
+        this.registerBuiltInTypes();
+        this.registerInteractions();
+        this.registerCommands();
+        this.loadBuiltInVehicles();
+        this.getEntityStoreRegistry().registerSystem(new VehicleDeathSystem());
+        this.logger.info("Registered VehicleDeathSystem for real-time death detection");
+        this.getEntityStoreRegistry().registerSystem(new VehicleReconnectSystem());
+        this.logger.info("Registered VehicleReconnectSystem for ECS persistence");
+        this.getEntityStoreRegistry().registerSystem(new VehicleTickSystem());
+        this.logger.info("Registered VehicleTickSystem for physics and input processing");
+        this.getEntityStoreRegistry().registerSystem(new VehicleControlSystem());
+        this.logger.info("Registered VehicleControlSystem for steering");
+        Path saveDir = this.getDataDirectory().resolve("saves");
+        this.vehiclePersistence = new VehiclePersistence(this.logger, saveDir);
+        this.logger.info("Vehicle save directory: " + String.valueOf(saveDir.toAbsolutePath()));
+        this.mountSystem = new VehicleMountSystem(this.logger);
+        this.logger.info("Initialized VehicleMountSystem");
+        this.getEventRegistry().registerGlobal(AddPlayerToWorldEvent.class, this::onPlayerAddedToWorld);
+        this.logger.info("Registered AddPlayerToWorldEvent for auto-respawn");
+        this.getEventRegistry().registerGlobal(DrainPlayerFromWorldEvent.class, this::onPlayerLeavingWorld);
+        this.logger.info("Registered DrainPlayerFromWorldEvent for auto-save");
+        this.registerFKeyPacketListener();
+        this.logger.info("Registered packet listener for F key mounting");
+        this.getLogger().at(Level.INFO).log("HytaleVehicles setup complete");
     }
 
-    /**
-     * Register packet listener for F key (Use interaction) to mount/dismount vehicles.
-     * Uses MouseInteraction packet (ID 111) which contains worldInteraction with target entity.
-     */
     private void registerFKeyPacketListener() {
-        // PlayerPacketWatcher gives us (PlayerRef, Packet) directly
-        PacketAdapters.registerInbound((PlayerPacketWatcher) (PlayerRef playerRef, Packet packet) -> {
+        PacketAdapters.registerInbound((PlayerPacketWatcher) (playerRef, packet) -> {
             int packetId = packet.getId();
-
-            // SyncInteractionChains (ID 290) is sent when player presses F to interact
-            // MouseInteraction (ID 111) is for mouse clicks - NOT for F key!
             if (packetId == 290) {
-                logger.info("SyncInteractionChains packet received - checking for F key interaction");
-                handleFKeyFromSyncPacket(playerRef, packet);
+                this.logger.info("SyncInteractionChains packet received - checking for F key interaction");
+                this.handleFKeyFromSyncPacket(playerRef, packet);
             }
         });
     }
 
-    /**
-     * Handle F key from SyncInteractionChains packet.
-     * This packet is sent when player presses F to interact with an entity.
-     * The target entity is identified by an integer entityId (network ID), not a Ref.
-     */
-    @SuppressWarnings("unchecked")
     private void handleFKeyFromSyncPacket(PlayerRef playerRef, Packet packet) {
-        if (playerRef == null) return;
-
-        var world = this.cachedWorld;
-        if (world == null) return;
-
-        // Cast to proper packet type
+        if (playerRef == null) {
+            return;
+        }
+        World world = this.cachedWorld;
+        if (world == null) {
+            return;
+        }
         SyncInteractionChains interactionChains = (SyncInteractionChains) packet;
         SyncInteractionChain[] updates = interactionChains.updates;
-
         if (updates == null || updates.length == 0) {
             return;
         }
-
-        // Find F key (Use) interaction and extract target entity ID
         int targetEntityId = -1;
         boolean isUseInteraction = false;
-
-        logger.info("=== F KEY PACKET PARSING ===");
-        logger.info("Number of interaction chains: " + updates.length);
-
-        for (int i = 0; i < updates.length; i++) {
+        this.logger.info("=== F KEY PACKET PARSING ===");
+        this.logger.info("Number of interaction chains: " + updates.length);
+        for (int i = 0; i < updates.length; ++i) {
             SyncInteractionChain chain = updates[i];
-            logger.info("Chain[" + i + "] interactionType=" + chain.interactionType);
-
-            // Check if this is F key (Use interaction)
-            if (chain.interactionType == InteractionType.Use) {
-                isUseInteraction = true;
-                logger.info("  -> This is a USE interaction (F key)");
-
-                // Extract entityId from InteractionChainData using reflection
-                try {
-                    logger.info("  Chain fields:");
-                    for (var field : chain.getClass().getDeclaredFields()) {
-                        field.setAccessible(true);
-                        Object value = field.get(chain);
-                        logger.info("    " + field.getName() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
-
-                        // Check InteractionChainData for entityId
-                        if (field.getName().equals("data") && value != null) {
-                            logger.info("    -> Data object fields:");
-                            for (var dataField : value.getClass().getDeclaredFields()) {
-                                dataField.setAccessible(true);
-                                Object dataValue = dataField.get(value);
-                                logger.info("       " + dataField.getName() + " = " + dataValue + " (type: " + (dataValue != null ? dataValue.getClass().getSimpleName() : "null") + ")");
-
-                                // entityId is an integer - the network ID of the target entity
-                                if (dataField.getName().equals("entityId")) {
-                                    Object idValue = dataField.get(value);
-                                    if (idValue instanceof Integer) {
-                                        targetEntityId = (Integer) idValue;
-                                        logger.info("       *** FOUND entityId (Integer): " + targetEntityId);
-                                    } else if (idValue instanceof Number) {
-                                        targetEntityId = ((Number) idValue).intValue();
-                                        logger.info("       *** FOUND entityId (Number): " + targetEntityId);
-                                    }
-                                }
-                            }
+            this.logger.info("Chain[" + i + "] interactionType=" + String.valueOf(chain.interactionType));
+            if (chain.interactionType != InteractionType.Use) continue;
+            isUseInteraction = true;
+            this.logger.info("  -> This is a USE interaction (F key)");
+            try {
+                this.logger.info("  Chain fields:");
+                for (Field field : chain.getClass().getDeclaredFields()) {
+                    field.setAccessible(true);
+                    Object value = field.get(chain);
+                    this.logger.info("    " + field.getName() + " = " + String.valueOf(value) + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
+                    if (!field.getName().equals("data") || value == null) continue;
+                    this.logger.info("    -> Data object fields:");
+                    for (Field dataField : value.getClass().getDeclaredFields()) {
+                        dataField.setAccessible(true);
+                        Object dataValue = dataField.get(value);
+                        this.logger.info("       " + dataField.getName() + " = " + String.valueOf(dataValue) + " (type: " + (dataValue != null ? dataValue.getClass().getSimpleName() : "null") + ")");
+                        if (!dataField.getName().equals("entityId")) continue;
+                        Object idValue = dataField.get(value);
+                        if (idValue instanceof Integer) {
+                            targetEntityId = (Integer) idValue;
+                            this.logger.info("       *** FOUND entityId (Integer): " + targetEntityId);
+                            continue;
                         }
+                        if (!(idValue instanceof Number)) continue;
+                        targetEntityId = ((Number) idValue).intValue();
+                        this.logger.info("       *** FOUND entityId (Number): " + targetEntityId);
                     }
-                } catch (Exception e) {
-                    logger.warning("Error reading entityId from packet: " + e.getMessage());
-                    e.printStackTrace();
                 }
+                continue;
+            }
+            catch (Exception e) {
+                this.logger.warning("Error reading entityId from packet: " + e.getMessage());
+                e.printStackTrace();
             }
         }
-        logger.info("=== END PACKET PARSING, targetEntityId=" + targetEntityId + " ===");
-
+        this.logger.info("=== END PACKET PARSING, targetEntityId=" + targetEntityId + " ===");
         if (!isUseInteraction) {
-            // Not F key, ignore
             return;
         }
-
         if (targetEntityId <= 0) {
-            logger.info("F key pressed but no valid entityId in packet");
+            this.logger.info("F key pressed but no valid entityId in packet");
+            world.execute(() -> {
+                try {
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    if (this.mountSystem.isPlayerMounted(playerRef, store)) {
+                        this.logger.info("Player is mounted, dismounting because F pressed without target");
+                        this.mountSystem.dismountPlayer(playerRef, store);
+                        this.logger.info("Player dismounted successfully");
+                    } else {
+                        this.logger.info("Player not mounted, ignoring F press without target");
+                    }
+                }
+                catch (Exception e) {
+                    this.logger.severe("Error checking mount status for dismount: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            });
             return;
         }
-
-        final int finalTargetId = targetEntityId;
-
-        // Schedule on world thread
+        int finalTargetId = targetEntityId;
         world.execute(() -> {
             try {
-                Store<EntityStore> store = world.getEntityStore().getStore();
-                Ref<EntityStore> playerEntityRef = playerRef.getReference();
-
-                // Check if player is already mounted
-                if (mountSystem.isPlayerMounted(playerRef, store)) {
-                    // Get current vehicle
-                    Ref<EntityStore> currentVehicleRef = mountSystem.getMountedVehicle(playerRef, store);
-
-                    // Check if clicking on the SAME vehicle or a DIFFERENT one
-                    if (currentVehicleRef != null && currentVehicleRef.isValid()) {
-                        var networkIdType = com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId.getComponentType();
-                        var currentNetworkId = store.getComponent(currentVehicleRef, networkIdType);
-                        int currentVehicleNetworkId = currentNetworkId != null ? currentNetworkId.getId() : -1;
-
-                        logger.info("Player already mounted to vehicle with NetworkId=" + currentVehicleNetworkId +
-                                   ", clicked on NetworkId=" + finalTargetId);
-
-                        // If clicking on a DIFFERENT vehicle, dismount and continue to mount the new one
-                        if (currentVehicleNetworkId != finalTargetId) {
-                            logger.info("Clicked on different vehicle - dismounting from current and mounting new");
-                            mountSystem.dismountPlayer(playerRef, store);
-                            // Don't return - continue to mount the new vehicle below
-                        } else {
-                            // Clicking on the SAME vehicle - try to cycle seats
-                            VehicleDataComponent vehicleData = store.getComponent(currentVehicleRef, VehicleDataComponent.getComponentType());
-                            if (vehicleData != null) {
-                                String definitionId = vehicleData.getDefinitionId();
-                                VehicleDefinition definition = vehicleRegistry.getDefinition(definitionId);
-                                if (definition != null && definition.seats.size() > 1) {
-                                    float scale = definition.modelScale > 0 ? definition.modelScale : 1.0f;
-                                    boolean seatsPreScaled = definition.blockyModelPath != null && !definition.blockyModelPath.isEmpty();
-                                    boolean cycled = mountSystem.cycleSeat(playerRef, store, vehicleData,
-                                        definition.seats, scale, definition.modelYOffset, seatsPreScaled);
+                Ref<EntityStore> targetEntityRef;
+                Store<EntityStore> store;
+                block11: {
+                    store = world.getEntityStore().getStore();
+                    Ref<EntityStore> playerEntityRef = playerRef.getReference();
+                    if (this.mountSystem.isPlayerMounted(playerRef, store)) {
+                        // Use stable NetworkId from MountInfo, not from Ref (which can become stale after ECS compaction)
+                        int currentVehicleNetworkId = this.mountSystem.getMountedVehicleNetworkId(playerRef);
+                        Ref<EntityStore> currentVehicleRef = this.mountSystem.getMountedVehicle(playerRef, store);
+                        if (currentVehicleNetworkId >= 0) {
+                            this.logger.info("Player already mounted to vehicle with NetworkId=" + currentVehicleNetworkId + ", clicked on NetworkId=" + finalTargetId);
+                            if (currentVehicleNetworkId != finalTargetId) {
+                                this.logger.info("Clicked on different vehicle - dismounting from current and mounting new");
+                                this.mountSystem.dismountPlayer(playerRef, store);
+                                break block11;
+                            } else {
+                                String definitionId;
+                                VehicleDefinition definition;
+                                VehicleDataComponent vehicleData = store.getComponent(currentVehicleRef, VehicleDataComponent.getComponentType());
+                                if (vehicleData != null && (definition = this.vehicleRegistry.getDefinition(definitionId = vehicleData.getDefinitionId())) != null && definition.seats.size() > 1) {
+                                    boolean seatsPreScaled;
+                                    float scale = definition.modelScale > 0.0f ? definition.modelScale : 1.0f;
+                                    boolean cycled = this.mountSystem.cycleSeat(playerRef, store, vehicleData, definition.seats, scale, definition.modelYOffset, seatsPreScaled = definition.blockyModelPath != null && !definition.blockyModelPath.isEmpty());
                                     if (cycled) {
-                                        logger.info("Player cycled to next seat");
+                                        this.logger.info("Player cycled to next seat");
                                         return;
                                     }
-                                    // Could not cycle - all other seats occupied, dismount
-                                    logger.info("All other seats occupied - dismounting");
+                                    this.logger.info("All other seats occupied - dismounting");
                                 }
-                                // Single seat vehicle or no seats to cycle to - dismount
+                                this.mountSystem.dismountPlayer(playerRef, store);
+                                this.logger.info("Player dismounted via F key");
+                                return;
                             }
-                            // Dismount
-                            mountSystem.dismountPlayer(playerRef, store);
-                            logger.info("Player dismounted via F key");
-                            return;
                         }
-                    } else {
-                        // Invalid vehicle ref, just dismount
-                        mountSystem.dismountPlayer(playerRef, store);
-                        logger.info("Player dismounted via F key (invalid vehicle ref)");
+                        this.mountSystem.dismountPlayer(playerRef, store);
+                        this.logger.info("Player dismounted via F key (invalid vehicle ref)");
                         return;
                     }
                 }
-
-                // Look up entity by NetworkId - find the entity with matching network ID
-                Ref<EntityStore> targetEntityRef = findEntityByNetworkId(store, finalTargetId);
-
-                if (targetEntityRef == null || !targetEntityRef.isValid()) {
-                    logger.info("Could not find entity with networkId: " + finalTargetId);
+                if ((targetEntityRef = this.findEntityByNetworkId(store, finalTargetId)) == null || !targetEntityRef.isValid()) {
+                    this.logger.info("Could not find entity with networkId: " + finalTargetId);
                     return;
                 }
-
-                // Check if target is a vehicle
                 VehicleDataComponent vehicleData = store.getComponent(targetEntityRef, VehicleDataComponent.getComponentType());
                 if (vehicleData == null) {
-                    logger.info("F key target (networkId=" + finalTargetId + ") is not a vehicle");
+                    this.logger.info("F key target (networkId=" + finalTargetId + ") is not a vehicle");
                     return;
                 }
-
-                logger.info("=== MOUNTING TO VEHICLE ===");
-                logger.info("  targetEntityRef=" + targetEntityRef);
-                logger.info("  vehicleData.definitionId=" + vehicleData.getDefinitionId());
-
-                // Get NetworkId of the target ref to double-check
-                var targetNetworkIdComp = store.getComponent(targetEntityRef,
-                    com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId.getComponentType());
-                logger.info("  targetEntityRef's NetworkId=" + (targetNetworkIdComp != null ? targetNetworkIdComp.getId() : "null"));
-                logger.info("  Expected NetworkId from packet=" + finalTargetId);
-
-                // Ensure we have a BaseVehicle wrapper for this entity (creates on-demand if needed)
-                var vehicleWrapper = createVehicleWrapperOnDemand(targetEntityRef, vehicleData, store, world);
+                this.logger.info("=== MOUNTING TO VEHICLE ===");
+                this.logger.info("  targetEntityRef=" + String.valueOf(targetEntityRef));
+                this.logger.info("  vehicleData.definitionId=" + vehicleData.getDefinitionId());
+                NetworkId targetNetworkIdComp = store.getComponent(targetEntityRef, NetworkId.getComponentType());
+                this.logger.info("  targetEntityRef's NetworkId=" + String.valueOf(targetNetworkIdComp != null ? Integer.valueOf(targetNetworkIdComp.getId()) : "null"));
+                this.logger.info("  Expected NetworkId from packet=" + finalTargetId);
+                BaseVehicle vehicleWrapper = this.createVehicleWrapperOnDemand(targetEntityRef, vehicleData, store, world);
                 if (vehicleWrapper == null) {
-                    logger.warning("Failed to create vehicle wrapper");
+                    this.logger.warning("Failed to create vehicle wrapper");
                     return;
                 }
-
-                logger.info("  vehicleWrapper.instanceId=" + vehicleWrapper.getInstanceId());
-                logger.info("  vehicleWrapper.entityRef=" + vehicleWrapper.getEntityRef());
-
-                mountToVehicle(playerRef, targetEntityRef, vehicleData, store);
-                logger.info("=== END MOUNTING ===");
-
-            } catch (Exception e) {
-                logger.warning("Error handling F key: " + e.getMessage());
+                this.logger.info("  vehicleWrapper.instanceId=" + String.valueOf(vehicleWrapper.getInstanceId()));
+                this.logger.info("  vehicleWrapper.entityRef=" + String.valueOf(vehicleWrapper.getEntityRef()));
+                this.mountToVehicle(playerRef, targetEntityRef, vehicleData, store);
+                this.logger.info("=== END MOUNTING ===");
+                return;
+            }
+            catch (Exception e) {
+                this.logger.warning("Error handling F key: " + e.getMessage());
                 e.printStackTrace();
             }
         });
     }
 
-    /**
-     * Find an entity by its NetworkId value.
-     * NetworkId is the integer ID sent to clients for entity sync.
-     *
-     * We try multiple approaches:
-     * 1. Check our registry first
-     * 2. Try to find a Ref by iterating possible indices
-     * 3. Use reflection to explore available lookup methods
-     */
     private Ref<EntityStore> findEntityByNetworkId(Store<EntityStore> store, int targetNetworkId) {
         try {
-            logger.info("=== SEARCHING FOR ENTITY WITH networkId=" + targetNetworkId + " ===");
-
-            var networkIdType = com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId.getComponentType();
-            if (networkIdType == null) {
-                logger.warning("NetworkId component type not available");
-                return null;
-            }
-
-            // First check our registry (for vehicles we've already wrapped)
-            logger.info("Checking registry (has " + vehicleRegistry.getSpawnedCount() + " vehicles)...");
-            int vehicleIndex = 0;
-            for (var vehicle : vehicleRegistry.getAllVehicles()) {
-                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                logger.info("  Vehicle[" + vehicleIndex + "]: def=" + vehicle.getDefinition().id +
-                           ", ref=" + vehicleRef + ", refValid=" + (vehicleRef != null ? vehicleRef.isValid() : "null"));
-
-                if (vehicleRef == null || !vehicleRef.isValid()) {
-                    vehicleIndex++;
-                    continue;
-                }
-
-                var networkId = store.getComponent(vehicleRef, networkIdType);
-                int vehicleNetworkId = networkId != null ? networkId.getId() : -1;
-                logger.info("    NetworkId=" + vehicleNetworkId + ", looking for=" + targetNetworkId +
-                           ", match=" + (vehicleNetworkId == targetNetworkId));
-
-                if (networkId != null && networkId.getId() == targetNetworkId) {
-                    logger.info("  >>> FOUND MATCH at index " + vehicleIndex + " <<<");
+            this.logger.info("Searching for vehicle with networkId=" + targetNetworkId + " (registry has " + this.vehicleRegistry.getSpawnedCount() + " vehicles)");
+            // Primary: use cached NetworkId on BaseVehicle (stable, no Ref dependency)
+            BaseVehicle match = this.vehicleRegistry.getVehicleByNetworkId(targetNetworkId);
+            if (match != null) {
+                Ref<EntityStore> vehicleRef = match.getEntityRef();
+                if (vehicleRef != null && vehicleRef.isValid()) {
+                    this.logger.info("Found vehicle by cached networkId: " + match.getDefinition().id);
                     return vehicleRef;
                 }
-                vehicleIndex++;
+                this.logger.warning("Vehicle found by networkId but Ref is invalid - ref may be stale");
             }
-
-            // Cannot iterate all entities or lookup by networkId directly
-            // Vehicle entities persisted by ECS won't be found until we have a wrapper
-            // TODO: Use a TickingSystem to periodically scan for VehicleDataComponent entities
-            logger.info("=== NO ENTITY FOUND WITH networkId=" + targetNetworkId + " ===");
-            logger.info("Note: ECS-persisted vehicles need to be re-placed to create wrappers");
+            // Fallback: scan store components (handles Ref drift)
+            ComponentType networkIdType = NetworkId.getComponentType();
+            if (networkIdType == null) {
+                return null;
+            }
+            for (BaseVehicle vehicle : this.vehicleRegistry.getAllVehicles()) {
+                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
+                if (vehicleRef == null || !vehicleRef.isValid()) continue;
+                try {
+                    NetworkId networkId = (NetworkId) store.getComponent(vehicleRef, networkIdType);
+                    if (networkId != null && networkId.getId() == targetNetworkId) {
+                        this.logger.info("Found vehicle by store scan: " + vehicle.getDefinition().id);
+                        return vehicleRef;
+                    }
+                } catch (Exception e) {
+                    // Ref may be stale, skip
+                }
+            }
+            this.logger.info("No vehicle found with networkId=" + targetNetworkId);
             return null;
-
-        } catch (Exception e) {
-            logger.warning("Error finding entity by NetworkId: " + e.getMessage());
-            e.printStackTrace();
+        }
+        catch (Exception e) {
+            this.logger.warning("Error finding entity by NetworkId: " + e.getMessage());
             return null;
         }
     }
 
-    /**
-     * Mount player to a specific vehicle entity.
-     * Helper method used by both packet-based and fallback mounting.
-     * Automatically finds the next available seat.
-     */
-    private void mountToVehicle(PlayerRef playerRef, Ref<EntityStore> vehicleRef,
-                                 VehicleDataComponent vehicleData, Store<EntityStore> store) {
+    private void mountToVehicle(PlayerRef playerRef, Ref<EntityStore> vehicleRef, VehicleDataComponent vehicleData, Store<EntityStore> store) {
         String definitionId = vehicleData.getDefinitionId();
-        VehicleDefinition definition = vehicleRegistry.getDefinition(definitionId);
-
-        logger.info("=== MOUNT DEBUG ===");
-        logger.info("Definition ID: " + definitionId);
-        logger.info("Definition found: " + (definition != null));
-
-        float seatX = 0f, seatY = 0.5f, seatZ = 0f;
+        VehicleDefinition definition = this.vehicleRegistry.getDefinition(definitionId);
+        this.logger.info("=== MOUNT DEBUG ===");
+        this.logger.info("Definition ID: " + definitionId);
+        this.logger.info("Definition found: " + (definition != null));
+        float seatX = 0.0f;
+        float seatY = 0.5f;
+        float seatZ = 0.0f;
         int seatIndex = 0;
-
         if (definition != null) {
-            float scale = definition.modelScale > 0 ? definition.modelScale : 1.0f;
+            float scale = definition.modelScale > 0.0f ? definition.modelScale : 1.0f;
             float modelYOffset = definition.modelYOffset;
-
-            logger.info("Definition seats count: " + definition.seats.size());
-            logger.info("Scale: " + scale + ", modelYOffset: " + modelYOffset);
-
+            this.logger.info("Definition seats count: " + definition.seats.size());
+            this.logger.info("Scale: " + scale + ", modelYOffset: " + modelYOffset);
             if (!definition.seats.isEmpty()) {
-                // Find next available seat - prioritize driver seats
+                boolean seatsFromModel;
                 int totalSeats = definition.seats.size();
-
-                // First, try to find a driver seat (canControl=true)
                 int driverSeat = -1;
-                for (int i = 0; i < totalSeats; i++) {
-                    if (!vehicleData.isSeatOccupied(i)) {
-                        var seat = definition.seats.get(i);
-                        if (seat.canControl) {
-                            driverSeat = i;
-                            break;
-                        }
-                    }
+                for (int i = 0; i < totalSeats; ++i) {
+                    if (vehicleData.isSeatOccupied(i)) continue;
+                    SeatDefinition seat = definition.seats.get(i);
+                    if (!seat.canControl) continue;
+                    driverSeat = i;
+                    break;
                 }
-
-                // If driver seat found, use it; otherwise use first available
                 seatIndex = driverSeat >= 0 ? driverSeat : vehicleData.findAvailableSeat(totalSeats);
-                logger.info("Finding available seat. Total: " + totalSeats + ", Driver seat: " + driverSeat + ", Final: " + seatIndex);
-
+                this.logger.info("Finding available seat. Total: " + totalSeats + ", Driver seat: " + driverSeat + ", Final: " + seatIndex);
                 if (seatIndex < 0) {
-                    logger.info("All seats occupied on this vehicle");
-                    return; // No seats available
+                    this.logger.info("All seats occupied on this vehicle");
+                    return;
                 }
-
-                var seat = definition.seats.get(seatIndex);
-                logger.info("Seat " + seatIndex + " raw position: x=" + seat.x + ", y=" + seat.y + ", z=" + seat.z);
-
-                // If seats were extracted from blockymodel, they're already in final coordinates
-                // Don't multiply by modelScale again
-                boolean seatsFromModel = definition.blockyModelPath != null && !definition.blockyModelPath.isEmpty();
+                SeatDefinition seat = definition.seats.get(seatIndex);
+                this.logger.info("Seat " + seatIndex + " raw position: x=" + seat.x + ", y=" + seat.y + ", z=" + seat.z);
+                seatsFromModel = definition.blockyModelPath != null && !definition.blockyModelPath.isEmpty();
                 if (seatsFromModel) {
                     seatX = seat.x;
                     seatY = seat.y - modelYOffset;
                     seatZ = seat.z;
-                    logger.info("Using pre-scaled seats from blockymodel");
+                    this.logger.info("Using pre-scaled seats from blockymodel");
                 } else {
                     seatX = seat.x * scale;
-                    seatY = (seat.y * scale) - modelYOffset;
+                    seatY = seat.y * scale - modelYOffset;
                     seatZ = seat.z * scale;
                 }
-
-                logger.info("Seat " + seatIndex + " FINAL offset: x=" + seatX + ", y=" + seatY + ", z=" + seatZ);
-
-                // Mark seat as occupied
+                this.logger.info("Seat " + seatIndex + " FINAL offset: x=" + seatX + ", y=" + seatY + ", z=" + seatZ);
                 vehicleData.occupySeat(seatIndex);
-                logger.info("Occupied seats after mount: " + vehicleData.getOccupiedSeatCount());
+                this.logger.info("Occupied seats after mount: " + vehicleData.getOccupiedSeatCount());
             } else {
-                logger.info("No seats defined, using default Y offset");
-                seatY = (0.5f * scale) - modelYOffset;
+                this.logger.info("No seats defined, using default Y offset");
+                seatY = 0.5f * scale - modelYOffset;
             }
         } else {
-            logger.warning("Definition is NULL for " + definitionId);
+            this.logger.warning("Definition is NULL for " + definitionId);
         }
-
-        logger.info("Calling mountPlayer with offset: (" + seatX + ", " + seatY + ", " + seatZ + ")");
-        boolean success = mountSystem.mountPlayer(playerRef, vehicleRef, store, seatX, seatY, seatZ, seatIndex);
+        this.logger.info("Calling mountPlayer with offset: (" + seatX + ", " + seatY + ", " + seatZ + ")");
+        boolean success = this.mountSystem.mountPlayer(playerRef, vehicleRef, store, seatX, seatY, seatZ, seatIndex);
         if (success) {
-            logger.info("SUCCESS: Player mounted vehicle at seat " + seatIndex);
+            this.logger.info("SUCCESS: Player mounted vehicle at seat " + seatIndex);
         } else {
-            logger.warning("FAILED: Mount failed, vacating seat " + seatIndex);
-            // Mount failed, vacate the seat
+            this.logger.warning("FAILED: Mount failed, vacating seat " + seatIndex);
             vehicleData.vacateSeat(seatIndex);
         }
-        logger.info("=== END MOUNT DEBUG ===");
+        this.logger.info("=== END MOUNT DEBUG ===");
     }
 
-    /**
-     * Handle player joining world.
-     * Load vehicles from JSON save file (if they haven't been loaded yet).
-     */
     private void onPlayerAddedToWorld(AddPlayerToWorldEvent event) {
-        var world = event.getWorld();
-        if (world == null) return;
-
-        // Cache the world reference for F key mounting
-        this.cachedWorld = world;
-
-        // Load vehicles from JSON (only once per world, thread-safe)
-        if (vehiclesRespawned.compareAndSet(false, true)) {
-            // CRITICAL: Delay vehicle spawn by 2 seconds to let client fully join world
-            // EntityRefs become invalid if spawned before GameInstance.StartJoiningWorld completes
-            scheduler.schedule(() -> {
-                world.execute(() -> {
-                    try {
-                        var savedVehicles = vehiclePersistence.loadVehicles();
-                        if (!savedVehicles.isEmpty()) {
-                            logger.info("Auto-loading " + savedVehicles.size() + " vehicles from JSON (after 2s delay)...");
-                            int count = respawnVehiclesInternal(world, savedVehicles);
-                            logger.info("Auto-loaded " + count + " vehicles from JSON persistence");
-                        } else {
-                            logger.info("No saved vehicles to load");
-                        }
-                    } catch (Exception e) {
-                        logger.severe("Failed to auto-load vehicles: " + e.getMessage());
-                        e.printStackTrace();
-                    }
-                });
-            }, 2, TimeUnit.SECONDS); // 2 seconds delay
-        } else {
-            logger.info("Player joined world - vehicles already loaded");
+        this.logger.info("=== PLAYER ADDED TO WORLD ===");
+        World world = event.getWorld();
+        if (world == null) {
+            return;
         }
+        this.logger.info("Vehicles in registry BEFORE loading: " + this.vehicleRegistry.getSpawnedCount());
+        this.cachedWorld = world;
+        if (this.vehiclesRespawned.compareAndSet(false, true)) {
+            this.scheduler.schedule(() -> world.execute(() -> {
+                try {
+                    this.logger.info("=== DELAYED VEHICLE SPAWN (after 2s) ===");
+                    this.logger.info("Vehicles in registry BEFORE JSON spawn: " + this.vehicleRegistry.getSpawnedCount());
+                    List<VehiclePersistence.VehicleSaveData> savedVehicles = this.vehiclePersistence.loadVehicles();
+                    if (!savedVehicles.isEmpty()) {
+                        this.logger.info("Auto-loading " + savedVehicles.size() + " vehicles from JSON (after 2s delay)...");
+                        int count = this.respawnVehiclesInternal(world, savedVehicles);
+                        this.logger.info("Auto-loaded " + count + " vehicles from JSON persistence");
+                        this.logger.info("Vehicles in registry AFTER JSON spawn: " + this.vehicleRegistry.getSpawnedCount());
+                    } else {
+                        this.logger.info("No saved vehicles to load");
+                    }
+                    this.logger.info("=== END DELAYED VEHICLE SPAWN ===");
+                }
+                catch (Exception e) {
+                    this.logger.severe("Failed to auto-load vehicles: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }), 2L, TimeUnit.SECONDS);
+        } else {
+            this.logger.info("Player joined world - vehicles already loaded");
+        }
+        this.logger.info("=== END PLAYER ADDED TO WORLD ===");
     }
 
-    /**
-     * Create a BaseVehicle wrapper for an existing ECS entity on-demand.
-     * Called when player interacts with a vehicle entity that doesn't have a wrapper yet.
-     *
-     * @param entityRef The entity reference
-     * @param vehicleData The VehicleDataComponent
-     * @param store The entity store
-     * @param world The world
-     * @return The created BaseVehicle, or null if creation failed
-     */
-    private com.alexispace.hyvehicles.entity.BaseVehicle createVehicleWrapperOnDemand(
-            Ref<EntityStore> entityRef,
-            VehicleDataComponent vehicleData,
-            Store<EntityStore> store,
-            com.hypixel.hytale.server.core.universe.world.World world) {
-
+    private BaseVehicle createVehicleWrapperOnDemand(Ref<EntityStore> entityRef, VehicleDataComponent vehicleData, Store<EntityStore> store, World world) {
         String definitionId = vehicleData.getDefinitionId();
         if (definitionId == null || definitionId.isEmpty()) {
-            logger.warning("Vehicle entity has no definition ID");
+            this.logger.warning("Vehicle entity has no definition ID");
             return null;
         }
-
-        // Check if we already have a wrapper for this entity
-        for (var existing : vehicleRegistry.getAllVehicles()) {
-            Ref<EntityStore> existingRef = existing.getEntityRef();
-            if (existingRef != null && existingRef.equals(entityRef)) {
-                logger.info("Vehicle already has wrapper: " + definitionId);
+        // Use NetworkId (stable) for existing wrapper lookup, not Ref (unstable after ECS compaction)
+        int targetNetworkId = -1;
+        try {
+            NetworkId netId = (NetworkId) store.getComponent(entityRef, NetworkId.getComponentType());
+            if (netId != null) {
+                targetNetworkId = netId.getId();
+            }
+        } catch (Exception e) {
+            this.logger.warning("Could not read NetworkId for wrapper lookup: " + e.getMessage());
+        }
+        if (targetNetworkId >= 0) {
+            BaseVehicle existing = this.vehicleRegistry.getVehicleByNetworkId(targetNetworkId);
+            if (existing != null) {
+                // Update the vehicle's entity ref in case it changed due to ECS compaction
+                existing.setEntityRef(entityRef);
+                this.logger.info("Vehicle already has wrapper: " + definitionId + " (networkId=" + targetNetworkId + ")");
                 return existing;
             }
         }
-
-        // Get definition
-        VehicleDefinition definition = vehicleRegistry.getDefinition(definitionId);
+        VehicleDefinition definition = this.vehicleRegistry.getDefinition(definitionId);
         if (definition == null) {
-            logger.warning("Unknown vehicle definition: " + definitionId);
+            this.logger.warning("Unknown vehicle definition: " + definitionId);
             return null;
         }
-
-        // Get position from TransformComponent
-        var transform = store.getComponent(entityRef,
-            com.hypixel.hytale.server.core.modules.entity.component.TransformComponent.getComponentType());
+        TransformComponent transform = store.getComponent(entityRef, TransformComponent.getComponentType());
         if (transform == null) {
-            logger.warning("Vehicle entity has no TransformComponent");
+            this.logger.warning("Vehicle entity has no TransformComponent");
             return null;
         }
-
-        var position = transform.getPosition();
+        Vector3d position = transform.getPosition();
         float yaw = transform.getRotation().getYaw();
         float yOffset = definition.modelYOffset;
-
-        var vehiclePos = new com.alexispace.hyvehicles.util.Vec3(
-            (float) position.x,
-            (float) position.y - yOffset,
-            (float) position.z
-        );
-
-        // Create BaseVehicle wrapper
-        var creator = vehicleRegistry.getCreator(definition.type);
+        Vec3 vehiclePos = new Vec3((float) position.x, (float) position.y - yOffset, (float) position.z);
+        VehicleTypeCreator creator = this.vehicleRegistry.getCreator(definition.type);
         if (creator == null) {
-            logger.warning("No creator for vehicle type: " + definition.type);
+            this.logger.warning("No creator for vehicle type: " + definition.type);
             return null;
         }
-
-        var vehicle = creator.createVehicle(definition, vehiclePos, yaw);
+        BaseVehicle vehicle = creator.createVehicle(definition, vehiclePos, yaw);
         vehicle.setWorld(world);
         vehicle.setEntityRef(entityRef);
-
-        // Set up collision checker
-        var bridge = getEntityBridge();
+        if (targetNetworkId >= 0) {
+            vehicle.setNetworkId(targetNetworkId);
+        }
+        VehicleEntityBridge bridge = this.getEntityBridge();
         if (bridge != null) {
             vehicle.setCollisionChecker(bridge.createCollisionChecker(world));
         }
-
-        // Track it
-        vehicleRegistry.trackVehicle(vehicle);
-
-        logger.info("Created on-demand wrapper for vehicle: " + definitionId +
-                   " at " + vehiclePos + " (entityRef=" + entityRef + ")");
-
+        this.vehicleRegistry.trackVehicle(vehicle);
+        this.logger.info("Created on-demand wrapper for vehicle: " + definitionId + " at " + String.valueOf(vehiclePos) + " (networkId=" + targetNetworkId + ")");
         return vehicle;
     }
 
-    /**
-     * Handle player leaving world - cleanup and reset state.
-     * Vehicles are saved to JSON in shutdown() method.
-     */
     private void onPlayerLeavingWorld(DrainPlayerFromWorldEvent event) {
+        this.logger.info("=== PLAYER LEAVING WORLD ===");
+        this.logger.info("Vehicles in registry: " + this.vehicleRegistry.getSpawnedCount());
         Store<EntityStore> store = null;
-
-        // CRITICAL: Remove NPCMountComponent from all vehicles before saving
-        // This prevents world corruption on reload
         try {
-            for (var vehicle : vehicleRegistry.getAllVehicles()) {
+            for (BaseVehicle vehicle : this.vehicleRegistry.getAllVehicles()) {
                 Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                if (vehicleRef != null && vehicleRef.isValid()) {
-                    if (store == null) {
-                        store = vehicleRef.getStore(); // Get store once for reuse
-                    }
-                    if (store != null) {
-                        var mountComp = store.getComponent(vehicleRef,
-                            com.hypixel.hytale.builtin.mounts.NPCMountComponent.getComponentType());
-                        if (mountComp != null) {
-                            store.removeComponent(vehicleRef,
-                                com.hypixel.hytale.builtin.mounts.NPCMountComponent.getComponentType());
-                            logger.info("Removed NPCMountComponent from vehicle before save");
-                        }
-                    }
+                if (vehicleRef == null || !vehicleRef.isValid()) continue;
+                if (store == null) {
+                    store = vehicleRef.getStore();
                 }
             }
-        } catch (Exception e) {
-            logger.warning("Error cleaning up mount components: " + e.getMessage());
         }
-
-        // Clear mount tracking and reset player MovementConfigs
-        if (mountSystem != null && store != null) {
-            mountSystem.clearAllMounts(store);
-        } else if (mountSystem != null) {
-            logger.warning("No store available - using deprecated clearAllMounts()");
-            mountSystem.clearAllMounts();
+        catch (Exception e) {
+            this.logger.warning("Error during player leaving cleanup: " + e.getMessage());
         }
-
-        // Save vehicles to JSON (before world unloads)
-        saveVehicles();
-
-        // Remove ECS entities so they don't persist in world save
-        // We'll respawn from JSON on next join
-        int vehicleCount = vehicleRegistry.getSpawnedCount();
-        for (var vehicle : vehicleRegistry.getAllVehicles()) {
+        if (this.mountSystem != null && store != null) {
+            this.mountSystem.clearAllMounts(store);
+        } else if (this.mountSystem != null) {
+            this.logger.warning("No store available - using deprecated clearAllMounts()");
+            this.mountSystem.clearAllMounts();
+        }
+        this.saveVehicles();
+        this.vehiclesSavedForShutdown = true;
+        int vehicleCount = this.vehicleRegistry.getSpawnedCount();
+        for (BaseVehicle vehicle : this.vehicleRegistry.getAllVehicles()) {
             try {
-                // First dismount all passengers
                 vehicle.destroy();
-
-                // Then remove the ECS entity from the world
                 Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                if (vehicleRef != null && vehicleRef.isValid()) {
-                    if (store == null) {
-                        store = vehicleRef.getStore();
-                    }
-                    if (store != null) {
-                        store.removeEntity(vehicleRef, com.hypixel.hytale.component.RemoveReason.REMOVE);
-                        logger.info("Removed ECS entity for vehicle: " + vehicle.getDefinition().id);
-                    }
+                if (vehicleRef == null || !vehicleRef.isValid()) continue;
+                if (store == null) {
+                    store = vehicleRef.getStore();
                 }
-            } catch (Exception e) {
-                logger.warning("Failed to remove vehicle during world drain: " + e.getMessage());
+                if (store == null) continue;
+                store.removeEntity(vehicleRef, RemoveReason.REMOVE);
+                this.logger.info("Removed ECS entity for vehicle: " + vehicle.getDefinition().id);
+            }
+            catch (Exception e) {
+                this.logger.warning("Failed to remove vehicle during world drain: " + e.getMessage());
             }
         }
-        vehicleRegistry.clearAllTracking();
-
-        logger.info("Saved and removed " + vehicleCount + " vehicles (will reload from JSON)");
-        vehiclesRespawned.set(false); // Reset so we load vehicles on next join
-
-        // Clear VehicleReconnectSystem cache (if still registered)
+        this.vehicleRegistry.clearAllTracking();
+        this.logger.info("Saved and removed " + vehicleCount + " vehicles (will reload from JSON)");
+        this.vehiclesRespawned.set(false);
         try {
-            com.alexispace.hyvehicles.system.VehicleReconnectSystem.clearCache();
-        } catch (Exception ignored) {
-            // VehicleReconnectSystem may not exist anymore
+            VehicleReconnectSystem.clearCache();
         }
-
-        // Clear cached world reference
+        catch (Exception exception) {
+        }
         this.cachedWorld = null;
-
-        logger.info("Cleared vehicle wrappers - vehicles will be saved to JSON on shutdown");
+        this.logger.info("Cleared vehicle wrappers - vehicles will be saved to JSON on shutdown");
+        this.logger.info("=== END PLAYER LEAVING WORLD ===");
     }
 
-    /**
-     * Internal method to spawn vehicles - called on world thread.
-     */
-    private int respawnVehiclesInternal(com.hypixel.hytale.server.core.universe.world.World world,
-                                         java.util.List<VehiclePersistence.VehicleSaveData> savedVehicles) {
-        int successCount = 0;
-        for (var data : savedVehicles) {
-            try {
-                // Use exact saved position - don't adjust unless clearly invalid
-                float adjustedY = data.y;
-
-                // Only adjust if clearly invalid (underground or too high)
-                if (adjustedY < -20) {
-                    logger.warning("Vehicle " + data.definitionId + " saved at invalid Y=" + adjustedY + ", adjusting to 65");
-                    adjustedY = 65;
-                } else if (adjustedY > 320) {
-                    logger.warning("Vehicle " + data.definitionId + " saved at invalid Y=" + adjustedY + ", adjusting to 100");
-                    adjustedY = 100;
-                }
-
-                var pos = new com.alexispace.hyvehicles.util.Vec3(data.x, adjustedY, data.z);
-                logger.info("Spawning " + data.definitionId + " at (" + pos.x + ", " + pos.y + ", " + pos.z + ")");
-
-                var handle = vehicleAPI.spawnVehicle(data.definitionId, pos, data.yaw, world);
-                if (handle != null) {
-                    successCount++;
-                    logger.info("Successfully spawned " + data.definitionId);
-
-                    // CRITICAL: Verify the vehicle has a valid wrapper with entityRef
-                    // Without this, water vehicles sink and die (no buoyancy physics)
-                    com.alexispace.hyvehicles.entity.BaseVehicle vehicle = handle.getVehicle();
-                    if (vehicle != null && vehicle.getEntityRef() != null) {
-                        logger.info("Vehicle has valid wrapper and entityRef");
-                    } else {
-                        logger.warning("WARNING: Vehicle spawned but wrapper/ref is invalid!");
+    private int respawnVehiclesInternal(World world, List<VehiclePersistence.VehicleSaveData> savedVehicles) {
+        // Dedup: remove duplicate vehicles at same position before spawning
+        List<VehiclePersistence.VehicleSaveData> dedupedVehicles = new ArrayList<>();
+        int duplicatesSkipped = 0;
+        for (VehiclePersistence.VehicleSaveData data : savedVehicles) {
+            boolean isDuplicate = false;
+            for (VehiclePersistence.VehicleSaveData existing : dedupedVehicles) {
+                if (existing.definitionId.equals(data.definitionId)) {
+                    float dx = Math.abs(existing.x - data.x);
+                    float dy = Math.abs(existing.y - data.y);
+                    float dz = Math.abs(existing.z - data.z);
+                    if (dx < 1.0f && dy < 2.0f && dz < 1.0f) {
+                        isDuplicate = true;
+                        break;
                     }
-                } else {
-                    logger.warning("Failed to spawn " + data.definitionId + " - handle is null");
                 }
-            } catch (Exception e) {
-                logger.warning("Failed to respawn " + data.definitionId + ": " + e.getMessage());
-                e.printStackTrace();
+            }
+            if (isDuplicate) {
+                this.logger.info("[DEDUP] Skipping duplicate vehicle on load: " + data.definitionId
+                    + " at (" + String.format("%.2f", data.x) + ", " + String.format("%.2f", data.y) + ", " + String.format("%.2f", data.z) + ")");
+                ++duplicatesSkipped;
+                continue;
+            }
+            dedupedVehicles.add(data);
+        }
+        if (duplicatesSkipped > 0) {
+            this.logger.info("[DEDUP] Removed " + duplicatesSkipped + " duplicate vehicles from JSON data (had " + savedVehicles.size() + ", now " + dedupedVehicles.size() + ")");
+        }
+        int successCount = 0;
+        List<VehiclePersistence.VehicleSaveData> failedVehicles = new ArrayList<>();
+        for (VehiclePersistence.VehicleSaveData data : dedupedVehicles) {
+            try {
+                float adjustedY = data.y;
+                if (adjustedY < -20.0f) {
+                    this.logger.warning("Vehicle " + data.definitionId + " saved at invalid Y=" + adjustedY + ", adjusting to 65");
+                    adjustedY = 65.0f;
+                } else if (adjustedY > 320.0f) {
+                    this.logger.warning("Vehicle " + data.definitionId + " saved at invalid Y=" + adjustedY + ", adjusting to 100");
+                    adjustedY = 100.0f;
+                }
+                Vec3 pos = new Vec3(data.x, adjustedY, data.z);
+                this.logger.info("Spawning " + data.definitionId + " at (" + pos.x + ", " + pos.y + ", " + pos.z + ")");
+                VehicleHandle handle = this.vehicleAPI.spawnVehicle(data.definitionId, pos, data.yaw, world);
+                if (handle != null) {
+                    ++successCount;
+                    this.logger.info("Successfully spawned " + data.definitionId);
+                } else {
+                    this.logger.warning("Failed to spawn " + data.definitionId + " - will retry");
+                    failedVehicles.add(new VehiclePersistence.VehicleSaveData(data.definitionId, data.x, adjustedY, data.z, data.yaw));
+                }
+            }
+            catch (Exception e) {
+                this.logger.warning("Failed to respawn " + data.definitionId + ": " + e.getMessage());
+                failedVehicles.add(data);
             }
         }
-        // Clear save file after respawn
-        vehiclePersistence.clearSaveFile();
+        this.vehiclePersistence.clearSaveFile();
+        if (!failedVehicles.isEmpty()) {
+            this.logger.info(failedVehicles.size() + " vehicles failed to spawn - scheduling retry in 3s");
+            this.scheduler.schedule(() -> world.execute(() -> {
+                try {
+                    this.logger.info("=== RETRY SPAWN for " + failedVehicles.size() + " vehicles ===");
+                    int retrySuccess = 0;
+                    for (VehiclePersistence.VehicleSaveData data : failedVehicles) {
+                        try {
+                            Vec3 pos = new Vec3(data.x, data.y, data.z);
+                            VehicleHandle handle = this.vehicleAPI.spawnVehicle(data.definitionId, pos, data.yaw, world);
+                            if (handle != null) {
+                                ++retrySuccess;
+                                this.logger.info("Retry succeeded: " + data.definitionId);
+                            } else {
+                                this.logger.warning("Retry failed: " + data.definitionId + " - vehicle will be lost");
+                            }
+                        } catch (Exception e) {
+                            this.logger.warning("Retry error for " + data.definitionId + ": " + e.getMessage());
+                        }
+                    }
+                    this.logger.info("=== RETRY COMPLETE: " + retrySuccess + "/" + failedVehicles.size() + " recovered ===");
+                } catch (Exception e) {
+                    this.logger.severe("Retry spawn failed: " + e.getMessage());
+                }
+            }), 3L, TimeUnit.SECONDS);
+        }
         return successCount;
     }
 
-    /**
-     * Register VehicleDataComponent with Hytale's ECS.
-     * This component is persisted ON the entity by Hytale.
-     */
     private void registerVehicleDataComponent() {
         try {
-            ComponentType<EntityStore, VehicleDataComponent> type = getEntityStoreRegistry().registerComponent(
-                VehicleDataComponent.class,
-                "hyvehicles:vehicle_data",
-                VehicleDataComponent.CODEC
-            );
+            ComponentType type = this.getEntityStoreRegistry().registerComponent(VehicleDataComponent.class, "hyvehicles:vehicle_data", VehicleDataComponent.CODEC);
             VehicleDataComponent.setComponentType(type);
-            logger.info("Registered VehicleDataComponent with Hytale ECS");
-        } catch (Exception e) {
-            logger.severe("Failed to register VehicleDataComponent: " + e.getMessage());
+            this.logger.info("Registered VehicleDataComponent with Hytale ECS");
+        }
+        catch (Exception e) {
+            this.logger.severe("Failed to register VehicleDataComponent: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    /**
-     * Register built-in vehicle type creators.
-     * Similar to MTS's InterfaceManager static initialization.
-     */
     private void registerBuiltInTypes() {
-        // Phase 1: Water vehicles
-        vehicleRegistry.registerCreator("BOAT", BoatCreator.INSTANCE);
-        
-        // Phase 2: Ground vehicles (uncomment when implemented)
-        // vehicleRegistry.registerCreator("CART", CartCreator.INSTANCE);
-        // vehicleRegistry.registerCreator("CAR", CarCreator.INSTANCE);
-        
-        logger.info("Registered " + vehicleRegistry.getTypeCount() + " built-in vehicle types");
+        this.vehicleRegistry.registerCreator("BOAT", BoatCreator.INSTANCE);
+        this.logger.info("Registered " + this.vehicleRegistry.getTypeCount() + " built-in vehicle types");
     }
 
-    /**
-     * Register custom interactions for vehicle spawn items.
-     */
-    @SuppressWarnings("unchecked")
     private void registerInteractions() {
-        // Register DIRECTLY to Interaction.CODEC like DeployablesPlugin does
-        // This ensures the codec is available when item JSONs are parsed
-
-        // Register our VehicleDeployableConfig type for ghost preview support
-        DeployableConfig.CODEC.register(
-            "Vehicle",
-            (Class<DeployableConfig>) (Class<?>) VehicleDeployableConfig.class,
-            (com.hypixel.hytale.codec.Codec<DeployableConfig>) (com.hypixel.hytale.codec.Codec<?>) VehicleDeployableConfig.CODEC
-        );
-        getLogger().at(Level.INFO).log("Registered deployable config type: Vehicle");
-
-        // Basic spawn interaction (no preview)
-        Interaction.CODEC.register(
-            "hyvehicles_spawn_vehicle",
-            SpawnVehicleInteraction.class,
-            SpawnVehicleInteraction.CODEC
-        );
-        getLogger().at(Level.INFO).log("Registered interaction type: hyvehicles_spawn_vehicle");
-
-        // NPC boat spawn interaction with water surface detection
-        Interaction.CODEC.register(
-            "hyvehicles_spawn_npc_boat",
-            SpawnNPCBoatInteraction.class,
-            SpawnNPCBoatInteraction.CODEC
-        );
-        getLogger().at(Level.INFO).log("Registered interaction type: hyvehicles_spawn_npc_boat");
+        DeployableConfig.CODEC.register("Vehicle", VehicleDeployableConfig.class, VehicleDeployableConfig.CODEC);
+        this.getLogger().at(Level.INFO).log("Registered deployable config type: Vehicle");
+        Interaction.CODEC.register("hyvehicles_spawn_vehicle", SpawnVehicleInteraction.class, SpawnVehicleInteraction.CODEC);
+        this.getLogger().at(Level.INFO).log("Registered interaction type: hyvehicles_spawn_vehicle");
+        Interaction.CODEC.register("hyvehicles_spawn_npc_boat", SpawnNPCBoatInteraction.class, SpawnNPCBoatInteraction.CODEC);
+        this.getLogger().at(Level.INFO).log("Registered interaction type: hyvehicles_spawn_npc_boat");
     }
 
-    /**
-     * Register plugin commands with Hytale's command system.
-     */
     private void registerCommands() {
-        // Register the /hv command using Hytale's command API
-        getCommandRegistry().registerCommand(new HvCommand());
-        
-        logger.info("Registered /hv command");
-        logger.info("Commands: /hv spawn, /hv list, /hv types, /hv info, /hv help");
+        this.getCommandRegistry().registerCommand(new HvCommand());
+        this.logger.info("Registered /hv command");
+        this.logger.info("Commands: /hv spawn, /hv list, /hv types, /hv info, /hv help");
     }
-    
-    /**
-     * Load built-in example vehicles from resources.
-     * Loads vehicle definitions from JSON files in resources/vehicles/
-     */
-    private void loadBuiltInVehicles() {
-        // Load vehicles from JSON files in resources
-        String[] vehicleFiles = {"vehicles/simple_boat.json", "vehicles/rowboat.json"};
 
-        for (String resourcePath : vehicleFiles) {
-            try (java.io.InputStream stream = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+    private void loadBuiltInVehicles() {
+        String[] vehicleFiles;
+        for (String resourcePath : vehicleFiles = new String[]{"vehicles/simple_boat.json", "vehicles/rowboat.json", "vehicles/spruce_rowboat.json"}) {
+            try (InputStream stream = this.getClass().getClassLoader().getResourceAsStream(resourcePath)) {
                 if (stream == null) {
-                    logger.warning("Vehicle resource not found: " + resourcePath);
+                    this.logger.warning("Vehicle resource not found: " + resourcePath);
                     continue;
                 }
-
-                VehicleDefinition def = vehicleLoader.loadFromStream(stream, resourcePath);
-                if (def != null) {
-                    vehicleAPI.registerVehicle(def);
-                    logger.info("Loaded vehicle from JSON: " + def.id + " with " + def.seats.size() + " seats");
-                    // Log seat positions for debugging
-                    for (int i = 0; i < def.seats.size(); i++) {
-                        var seat = def.seats.get(i);
-                        logger.info("  Seat " + i + ": z=" + seat.z + ", y=" + seat.y + ", driver=" + seat.isDriver);
-                    }
+                VehicleDefinition def = this.vehicleLoader.loadFromStream(stream, resourcePath);
+                if (def == null) continue;
+                this.vehicleAPI.registerVehicle(def);
+                this.logger.info("Loaded vehicle from JSON: " + def.id + " with " + def.seats.size() + " seats");
+                for (int i = 0; i < def.seats.size(); ++i) {
+                    SeatDefinition seat = def.seats.get(i);
+                    this.logger.info("  Seat " + i + ": z=" + seat.z + ", y=" + seat.y + ", driver=" + seat.isDriver);
                 }
-            } catch (Exception e) {
-                logger.severe("Failed to load vehicle from " + resourcePath + ": " + e.getMessage());
+            }
+            catch (Exception e) {
+                this.logger.severe("Failed to load vehicle from " + resourcePath + ": " + e.getMessage());
                 e.printStackTrace();
             }
         }
     }
-    
-    @Override
+
     public void start() {
-        logger.info("HytaleVehicles has started!");
-        logger.info("API Version: " + VehicleAPI.API_VERSION);
-        logger.info("Registered " + vehicleRegistry.getTypeCount() + " vehicle types");
-        logger.info("Registered " + vehicleRegistry.getVehicleCount() + " vehicle definitions");
-        logger.info("Using JSON persistence for vehicles");
+        this.logger.info("HytaleVehicles has started!");
+        this.logger.info("API Version: 1");
+        this.logger.info("Registered " + this.vehicleRegistry.getTypeCount() + " vehicle types");
+        this.logger.info("Registered " + this.vehicleRegistry.getVehicleCount() + " vehicle definitions");
+        this.logger.info("Using JSON persistence for vehicles");
     }
-    
-    @Override
+
     public void shutdown() {
-        logger.info("HytaleVehicles is shutting down...");
-
-        // CRITICAL: Remove NPCMountComponent from all vehicles to prevent world corruption
-        // This component causes NPE on chunk load if the vehicle doesn't have full NPC setup
-        try {
-            for (var vehicle : vehicleRegistry.getAllVehicles()) {
-                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                if (vehicleRef != null && vehicleRef.isValid()) {
-                    Store<EntityStore> store = vehicleRef.getStore();
-                    if (store != null) {
-                        var mountComp = store.getComponent(vehicleRef,
-                            com.hypixel.hytale.builtin.mounts.NPCMountComponent.getComponentType());
-                        if (mountComp != null) {
-                            store.removeComponent(vehicleRef,
-                                com.hypixel.hytale.builtin.mounts.NPCMountComponent.getComponentType());
-                            logger.info("Removed NPCMountComponent from vehicle on shutdown");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            logger.warning("Error cleaning up mount components: " + e.getMessage());
+        this.logger.info("HytaleVehicles is shutting down...");
+        if (this.mountSystem != null) {
+            this.mountSystem.clearAllMounts();
         }
-
-        // Clear mount tracking
-        if (mountSystem != null) {
-            mountSystem.clearAllMounts();
+        if (!this.vehiclesSavedForShutdown) {
+            this.saveVehicles();
+        } else {
+            this.logger.info("Vehicles already saved by onPlayerLeavingWorld - skipping duplicate save");
         }
-
-        // Save all spawned vehicles to JSON
-        saveVehicles();
-
-        // Remove ECS entities and destroy vehicle wrappers
-        int vehicleCount = vehicleRegistry.getSpawnedCount();
-        for (var vehicle : vehicleRegistry.getAllVehicles()) {
+        int vehicleCount = this.vehicleRegistry.getSpawnedCount();
+        for (BaseVehicle vehicle : this.vehicleRegistry.getAllVehicles()) {
             try {
-                // First dismount all passengers
+                Store<EntityStore> store;
                 vehicle.destroy();
-
-                // Then remove the ECS entity from the world
                 Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                if (vehicleRef != null && vehicleRef.isValid()) {
-                    Store<EntityStore> store = vehicleRef.getStore();
-                    if (store != null) {
-                        store.removeEntity(vehicleRef, com.hypixel.hytale.component.RemoveReason.REMOVE);
-                        logger.info("Removed ECS entity for vehicle: " + vehicle.getDefinition().id);
+                if (vehicleRef == null || !vehicleRef.isValid() || (store = vehicleRef.getStore()) == null) continue;
+                store.removeEntity(vehicleRef, RemoveReason.REMOVE);
+                this.logger.info("Removed ECS entity for vehicle: " + vehicle.getDefinition().id);
+            }
+            catch (Exception e) {
+                this.logger.warning("Failed to remove vehicle during shutdown: " + e.getMessage());
+            }
+        }
+        this.logger.info("Cleaned up " + vehicleCount + " vehicles (wrappers + ECS entities)");
+        if (this.scheduler != null) {
+            this.scheduler.shutdown();
+            try {
+                if (!this.scheduler.awaitTermination(5L, TimeUnit.SECONDS)) {
+                    this.scheduler.shutdownNow();
+                }
+            }
+            catch (InterruptedException interruptedException) {
+                this.scheduler.shutdownNow();
+            }
+        }
+    }
+
+    private void saveVehicles() {
+        Collection<BaseVehicle> vehicles = this.vehicleRegistry.getAllVehicles();
+        ArrayList<VehiclePersistence.VehicleSaveData> saveData = new ArrayList<VehiclePersistence.VehicleSaveData>();
+        int duplicatesSkipped = 0;
+
+        // Get store for reading TransformComponent
+        Store<EntityStore> store = null;
+        if (this.cachedWorld != null) {
+            store = this.cachedWorld.getEntityStore().getStore();
+        }
+
+        for (BaseVehicle vehicle : vehicles) {
+            float x, y, z, yaw;
+
+            // CRITICAL: Read ACTUAL position from TransformComponent (works for both NPC and custom entities!)
+            Ref<EntityStore> entityRef = vehicle.getEntityRef();
+            if (store != null && entityRef != null && entityRef.isValid()) {
+                try {
+                    TransformComponent transform = store.getComponent(entityRef, TransformComponent.getComponentType());
+                    if (transform != null) {
+                        Vector3d pos = transform.getPosition();
+                        Vector3f rot = transform.getRotation();
+                        x = (float) pos.x;
+                        y = (float) pos.y;
+                        z = (float) pos.z;
+                        yaw = rot.getYaw();
+                        this.logger.info("[SAVE] Reading position from TransformComponent (actual NPC position)");
+                    } else {
+                        // Fallback to BaseVehicle.position
+                        float[] pos = vehicle.getPositionArray();
+                        x = pos[0];
+                        y = pos[1];
+                        z = pos[2];
+                        yaw = vehicle.getRotationYaw();
+                    }
+                } catch (Exception e) {
+                    // Fallback to BaseVehicle.position
+                    float[] pos = vehicle.getPositionArray();
+                    x = pos[0];
+                    y = pos[1];
+                    z = pos[2];
+                    yaw = vehicle.getRotationYaw();
+                }
+            } else {
+                // Fallback to BaseVehicle.position
+                float[] pos = vehicle.getPositionArray();
+                x = pos[0];
+                y = pos[1];
+                z = pos[2];
+                yaw = vehicle.getRotationYaw();
+            }
+            // Dedup: skip if another vehicle with same definition already saved at this position
+            boolean isDuplicate = false;
+            for (VehiclePersistence.VehicleSaveData existing : saveData) {
+                if (existing.definitionId.equals(vehicle.getDefinition().id)) {
+                    float dx = Math.abs(existing.x - x);
+                    float dy = Math.abs(existing.y - y);
+                    float dz = Math.abs(existing.z - z);
+                    if (dx < 1.0f && dy < 2.0f && dz < 1.0f) {
+                        isDuplicate = true;
+                        break;
                     }
                 }
-            } catch (Exception e) {
-                logger.warning("Failed to remove vehicle during shutdown: " + e.getMessage());
             }
-        }
-
-        logger.info("Cleaned up " + vehicleCount + " vehicles (wrappers + ECS entities)");
-
-        // Shutdown scheduler
-        if (scheduler != null) {
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
+            if (isDuplicate) {
+                this.logger.info("[SAVE] DEDUP: Skipping duplicate vehicle " + vehicle.getDefinition().id
+                    + " at (" + String.format("%.2f", x) + ", " + String.format("%.2f", y) + ", " + String.format("%.2f", z) + ")");
+                ++duplicatesSkipped;
+                continue;
             }
+            this.logger.info("[SAVE] Vehicle " + vehicle.getDefinition().id
+                + " saving position: (" + String.format("%.2f", x) + ", " + String.format("%.2f", y) + ", " + String.format("%.2f", z) + ")"
+                + " yaw=" + String.format("%.2f", yaw));
+            saveData.add(new VehiclePersistence.VehicleSaveData(vehicle.getDefinition().id, x, y, z, yaw));
         }
+        if (duplicatesSkipped > 0) {
+            this.logger.info("[SAVE] Removed " + duplicatesSkipped + " duplicate vehicles during save");
+        }
+        this.vehiclePersistence.saveVehicles(saveData);
     }
 
-    /**
-     * Save all spawned vehicles to JSON.
-     */
-    private void saveVehicles() {
-        var vehicles = vehicleRegistry.getAllVehicles();
-        var saveData = new java.util.ArrayList<VehiclePersistence.VehicleSaveData>();
-
-        for (var vehicle : vehicles) {
-            float[] pos = vehicle.getPositionArray();
-            saveData.add(new VehiclePersistence.VehicleSaveData(
-                vehicle.getDefinition().id,
-                pos[0], pos[1], pos[2],
-                vehicle.getRotationYaw()
-            ));
-        }
-
-        vehiclePersistence.saveVehicles(saveData);
-    }
-
-    /**
-     * Load and spawn vehicles from JSON save file.
-     * Must be called from the world thread (e.g., from /hv reload command).
-     *
-     * @param world The world to spawn vehicles in
-     * @return Number of vehicles spawned
-     */
-    public int loadAndSpawnVehicles(com.hypixel.hytale.server.core.universe.world.World world) {
-        var savedVehicles = vehiclePersistence.loadVehicles();
+    public int loadAndSpawnVehicles(World world) {
+        List<VehiclePersistence.VehicleSaveData> savedVehicles = this.vehiclePersistence.loadVehicles();
         if (savedVehicles.isEmpty()) {
-            logger.info("No saved vehicles to load");
+            this.logger.info("No saved vehicles to load");
             return 0;
         }
-
-        logger.info("Loading " + savedVehicles.size() + " vehicles from JSON...");
-
+        this.logger.info("Loading " + savedVehicles.size() + " vehicles from JSON...");
         int successCount = 0;
-        for (var data : savedVehicles) {
+        for (VehiclePersistence.VehicleSaveData data : savedVehicles) {
             try {
-                var pos = new com.alexispace.hyvehicles.util.Vec3(data.x, data.y, data.z);
-                var handle = vehicleAPI.spawnVehicle(data.definitionId, pos, data.yaw, world);
-                if (handle != null) {
-                    logger.info("Loaded: " + data.definitionId);
-                    successCount++;
-                }
-            } catch (Exception e) {
-                logger.warning("Failed to load " + data.definitionId + ": " + e.getMessage());
+                Vec3 pos = new Vec3(data.x, data.y, data.z);
+                VehicleHandle handle = this.vehicleAPI.spawnVehicle(data.definitionId, pos, data.yaw, world);
+                if (handle == null) continue;
+                this.logger.info("Loaded: " + data.definitionId);
+                ++successCount;
+            }
+            catch (Exception e) {
+                this.logger.warning("Failed to load " + data.definitionId + ": " + e.getMessage());
             }
         }
-
-        // Clear save file after loading
-        vehiclePersistence.clearSaveFile();
-
-        logger.info("Loaded " + successCount + " vehicles from JSON backup");
+        this.vehiclePersistence.clearSaveFile();
+        this.logger.info("Loaded " + successCount + " vehicles from JSON backup");
         return successCount;
     }
 
-    // ==================== Static Access ====================
-    
-    /**
-     * Get the plugin instance.
-     */
     public static HytaleVehiclesPlugin getInstance() {
         return instance;
     }
-    
-    /**
-     * Get the vehicle API for content packs.
-     * 
-     * @return The VehicleAPI
-     */
+
     public static VehicleAPI getAPI() {
         if (instance == null) {
             throw new IllegalStateException("HytaleVehicles is not loaded");
         }
-        return instance.vehicleAPI;
-    }
-    
-    /**
-     * Get the vehicle registry (internal use).
-     */
-    public VehicleRegistry getRegistry() {
-        return vehicleRegistry;
+        return HytaleVehiclesPlugin.instance.vehicleAPI;
     }
 
-    /**
-     * Get the entity bridge for direct entity operations.
-     * Used by VehicleDeathSystem for item drops after world reload.
-     */
+    public VehicleRegistry getRegistry() {
+        return this.vehicleRegistry;
+    }
+
     public VehicleEntityBridge getEntityBridge() {
-        if (vehicleAPI instanceof VehicleAPIImpl) {
-            return ((VehicleAPIImpl) vehicleAPI).getEntityBridge();
+        if (this.vehicleAPI instanceof VehicleAPIImpl) {
+            return this.vehicleAPI.getEntityBridge();
         }
         return null;
     }
 
-    /**
-     * Get the vehicle loader.
-     */
     public VehicleLoader getLoader() {
-        return vehicleLoader;
+        return this.vehicleLoader;
     }
 
-    /**
-     * Get the vehicle mount system.
-     * Used by VehicleTickSystem for NPC boat input processing.
-     */
     public VehicleMountSystem getMountSystem() {
-        return mountSystem;
+        return this.mountSystem;
     }
-
 }

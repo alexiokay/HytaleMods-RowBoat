@@ -1,341 +1,267 @@
 package com.alexispace.hyvehicles.system;
 
 import com.alexispace.hyvehicles.HytaleVehiclesPlugin;
-import com.alexispace.hyvehicles.definition.SeatDefinition;
 import com.alexispace.hyvehicles.definition.VehicleDefinition;
 import com.alexispace.hyvehicles.entity.BaseVehicle;
 import com.alexispace.hyvehicles.entity.VehicleDataComponent;
 import com.alexispace.hyvehicles.registry.VehicleRegistry;
+import com.alexispace.hyvehicles.util.Vec3;
 import com.alexispace.hyvehicles.util.VehicleLogger;
-import com.hypixel.hytale.builtin.mounts.MountedByComponent;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.system.tick.TickingSystem;
+import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.protocol.MovementStates;
 import com.hypixel.hytale.server.core.entity.movement.MovementStatesComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
-import com.hypixel.hytale.server.core.entity.AnimationUtils;
-import com.hypixel.hytale.protocol.AnimationSlot;
 
 import javax.annotation.Nonnull;
 
-/**
- * System that runs every tick to:
- * 1. Update vehicle physics (BaseVehicle.tick())
- * 2. Process NPC boat mounted player input (VehicleMountSystem)
- * 3. Process custom/simple boat driver input (MovementStates → VehicleInput)
- *
- * @author alexispace
- * @since 1.0
- */
 public class VehicleTickSystem extends TickingSystem<EntityStore> {
-
     private static final VehicleLogger logger = VehicleLogger.console();
-    private static final float DELTA_TIME = 0.05f; // 20 ticks per second
+    private static final float DELTA_TIME = 0.05f;
+    private int debugTickCounter = 0;
 
-    @Override
     public void tick(float deltaTime, int tickCount, @Nonnull Store<EntityStore> store) {
         HytaleVehiclesPlugin plugin = HytaleVehiclesPlugin.getInstance();
         if (plugin == null) return;
-
         VehicleRegistry registry = plugin.getRegistry();
         if (registry == null) return;
 
-        // === 1. Tick NPC boat mounted players (input interception) ===
+        // Resolve NetworkIds for vehicles spawned via CommandBuffer (deferred).
+        // The NetworkId can't be read at spawn time because the entity isn't in the
+        // store yet. On the next tick after the CommandBuffer flushes, we can read it.
+        for (BaseVehicle vehicle : registry.getAllVehicles()) {
+            if (vehicle.getNetworkId() < 0) {
+                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
+                if (vehicleRef != null && vehicleRef.isValid()) {
+                    try {
+                        NetworkId netId = (NetworkId) store.getComponent(vehicleRef, NetworkId.getComponentType());
+                        if (netId != null && netId.getId() >= 0) {
+                            vehicle.setNetworkId(netId.getId());
+                            logger.info("[NETWORK-ID] Resolved deferred NetworkId=" + netId.getId()
+                                + " for vehicle " + vehicle.getDefinition().id);
+                        }
+                    } catch (Exception e) {
+                        // Entity may not be committed yet, try again next tick
+                    }
+                }
+            }
+        }
+
         VehicleMountSystem mountSystem = plugin.getMountSystem();
         if (mountSystem != null) {
             mountSystem.tickMountedPlayers(store);
         }
 
-        // === 2. Process input for custom/simple boats ===
-        // For each vehicle, check if it has MountedByComponent and process driver input
         for (BaseVehicle vehicle : registry.getAllVehicles()) {
-            if (vehicle.isDestroyed()) {
-                continue;
-            }
-
             Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-            if (vehicleRef == null || !vehicleRef.isValid()) {
-                continue;
+            if (vehicle.isDestroyed() || vehicleRef == null || !vehicleRef.isValid()) continue;
+            this.processCustomBoatInput(vehicle, vehicleRef, store);
+            try {
+                this.updateVehicleSteering(vehicle, vehicleRef, store);
+            } catch (Exception e) {
+                // silently ignore steering errors
             }
-
-            processCustomBoatInput(vehicle, vehicleRef, store);
-
-            // === Update steering (rotation) based on controller's look direction ===
-            updateVehicleSteering(vehicle, vehicleRef, store);
         }
 
-        // === 3. Tick all vehicle physics ===
-        // IMPORTANT: Physics MUST update BEFORE animation check
-        // Animation depends on current velocity, which is updated by physics
         registry.tickAll(DELTA_TIME);
 
-        // === 4. Update animations AFTER physics ===
-        // Now that velocity is updated, we can correctly check if animation should play
+        boolean savePosition = this.debugTickCounter % 20 == 0;
         for (BaseVehicle vehicle : registry.getAllVehicles()) {
-            if (vehicle.isDestroyed()) {
-                continue;
-            }
-
             Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-            if (vehicleRef == null || !vehicleRef.isValid()) {
-                continue;
+            if (vehicle.isDestroyed() || vehicleRef == null || !vehicleRef.isValid()) continue;
+            this.syncPositionToEntity(vehicle, vehicleRef, store);
+            if (savePosition) {
+                this.persistPosition(vehicle, vehicleRef, store);
             }
-
-            // === Update rowing animation based on current velocity ===
-            updateVehicleAnimation(vehicle, vehicleRef, store);
         }
     }
 
-    // Debug counter to limit log spam
-    private int debugTickCounter = 0;
+    private void persistPosition(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
+        try {
+            VehicleDataComponent vehicleData = store.getComponent(vehicleRef, VehicleDataComponent.getComponentType());
+            if (vehicleData != null) {
+                Vec3 pos = vehicle.getPosition();
+                vehicleData.setPosition(pos.x, pos.y, pos.z, vehicle.getRotationYaw());
+            }
+        } catch (Exception e) {
+            // silently ignore
+        }
+    }
 
-    /**
-     * Update vehicle rotation based on the controller's look direction.
-     * Only the player in a seat with canControl=true can steer.
-     * This runs every tick for smooth steering.
-     */
     private void updateVehicleSteering(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
         HytaleVehiclesPlugin plugin = HytaleVehiclesPlugin.getInstance();
         if (plugin == null) return;
-
         VehicleMountSystem mountSystem = plugin.getMountSystem();
         if (mountSystem == null) return;
 
-        // Get vehicle definition
         VehicleDefinition definition = vehicle.getDefinition();
-        if (definition == null || definition.seats.isEmpty()) {
-            return;
-        }
+        if (definition == null || definition.seats.isEmpty()) return;
 
-        // Find the player who can control this vehicle (has canControl=true seat)
-        PlayerRef controllerPlayer = mountSystem.getVehicleController(vehicleRef, definition.seats);
+        PlayerRef controllerPlayer = mountSystem.getVehicleController(vehicle.getNetworkId(), definition.seats);
+        if (controllerPlayer == null) return;
 
-        // Debug logging every 60 ticks (~3 seconds)
-        debugTickCounter++;
-        if (debugTickCounter % 60 == 0) {
-            if (controllerPlayer == null) {
-                logger.info("[STEERING DEBUG] No controller found for vehicle " + definition.id +
-                           ". Seats with canControl: " + countCanControlSeats(definition));
-            } else {
-                logger.info("[STEERING DEBUG] Controller found: " + controllerPlayer.getUuid().toString().substring(0, 8) +
-                           " for vehicle " + definition.id);
-            }
-        }
+        Ref controllerRef = controllerPlayer.getReference();
+        if (controllerRef == null || !controllerRef.isValid()) return;
 
-        if (controllerPlayer == null) {
-            return; // No one with control authority mounted
-        }
-
-        // Get the controller's entity ref
-        Ref<EntityStore> controllerRef = controllerPlayer.getReference();
-        if (controllerRef == null || !controllerRef.isValid()) {
-            return;
-        }
-
-        // Get controller's transform to get their look direction
-        TransformComponent controllerTransform = store.getComponent(
-            controllerRef, TransformComponent.getComponentType());
-        if (controllerTransform == null) {
-            return;
-        }
+        TransformComponent controllerTransform = (TransformComponent) store.getComponent(controllerRef, TransformComponent.getComponentType());
+        if (controllerTransform == null) return;
 
         Vector3f controllerRotation = controllerTransform.getRotation();
         float controllerYaw = controllerRotation.getYaw();
-
-        // Update vehicle's rotation to match controller's look direction
         vehicle.setRotationYaw(controllerYaw);
     }
 
-    private String countCanControlSeats(VehicleDefinition def) {
-        int canControl = 0;
-        for (int i = 0; i < def.seats.size(); i++) {
-            if (def.seats.get(i).canControl) {
-                canControl++;
-            }
-        }
-        return canControl + "/" + def.seats.size() + " seats have canControl=true";
-    }
-
-    /**
-     * Process player input for custom/simple boats (non-NPC vehicles).
-     * Uses VehicleMountSystem to find the controller and read their MovementStates.
-     * Only processes input from passengers in seats with canControl=true.
-     */
     private void processCustomBoatInput(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
         HytaleVehiclesPlugin plugin = HytaleVehiclesPlugin.getInstance();
         if (plugin == null) return;
-
         VehicleMountSystem mountSystem = plugin.getMountSystem();
         if (mountSystem == null) return;
-
-        // Get vehicle definition
         VehicleDefinition definition = vehicle.getDefinition();
-        if (definition == null || definition.seats.isEmpty()) {
+        if (definition == null || definition.seats.isEmpty()) return;
+
+        boolean hasDriver = vehicle.hasDriver();
+        if (this.debugTickCounter % 100 == 0 && hasDriver) {
+            logger.info("[INPUT-DEBUG] Vehicle " + vehicle.getDefinition().id + " hasDriver=" + hasDriver + ", networkId=" + vehicle.getNetworkId());
+        }
+        if (!hasDriver) return;
+
+        PlayerRef controllerPlayer = mountSystem.getVehicleController(vehicle.getNetworkId(), definition.seats);
+        if (this.debugTickCounter % 100 == 0) {
+            logger.info("[INPUT-DEBUG] getVehicleController returned: " + (controllerPlayer != null ? "PLAYER" : "NULL"));
+        }
+        if (controllerPlayer == null) return;
+
+        Ref controllerRef = controllerPlayer.getReference();
+        if (controllerRef == null || !controllerRef.isValid()) return;
+
+        MovementStatesComponent movementComp;
+        try {
+            movementComp = (MovementStatesComponent) store.getComponent(controllerRef, MovementStatesComponent.getComponentType());
+        } catch (ArrayIndexOutOfBoundsException e) {
             return;
         }
-
-        // CRITICAL FIX: Verify vehicle actually has a driver FIRST
-        // This prevents processing input from nearby players who aren't mounted
-        if (!vehicle.hasDriver()) {
-            return; // No driver = no input processing
-        }
-
-        // Find the player who can control this vehicle (using our seat tracking)
-        var controllerPlayer = mountSystem.getVehicleController(vehicleRef, definition.seats);
-        if (controllerPlayer == null) {
-            return; // No one with control authority mounted
-        }
-
-        // Get the controller's entity ref
-        Ref<EntityStore> controllerRef = controllerPlayer.getReference();
-        if (controllerRef == null || !controllerRef.isValid()) {
-            return;
-        }
-
-        // Get controller's MovementStatesComponent
-        MovementStatesComponent movementComp = store.getComponent(
-            controllerRef, MovementStatesComponent.getComponentType());
-        if (movementComp == null) {
-            return;
-        }
+        if (movementComp == null) return;
 
         MovementStates states = movementComp.getMovementStates();
-        if (states == null) {
-            return;
+        if (states == null) return;
+
+        // Log ACTUAL movement states every second
+        if (this.debugTickCounter % 20 == 0) {
+            logger.info("[STATES] walking=" + states.walking + ", running=" + states.running
+                + ", sprinting=" + states.sprinting + ", crouching=" + states.crouching
+                + ", jumping=" + states.jumping + ", swimming=" + states.swimming);
         }
 
-        // Convert MovementStates to VehicleInput
         BaseVehicle.VehicleInput input = new BaseVehicle.VehicleInput();
 
-        // Log movement states every 20 ticks (1 second)
-        if (debugTickCounter % 20 == 0) {
-            logger.info("[INPUT DEBUG] walking=" + states.walking +
-                       ", running=" + states.running +
-                       ", swimming=" + states.swimming +
-                       ", sprinting=" + states.sprinting +
-                       ", crouching=" + states.crouching +
-                       ", jumping=" + states.jumping);
-        }
-
-        // WASD keys - check walking/running/swimming for W key (forward movement)
-        // Swimming state works with "Montar" MovementConfig when in water!
         if (states.walking || states.running || states.swimming) {
             input.forward = 1.0f;
         }
-
-        // Crouching without movement = S key (back up slowly)
         if (states.crouching && !states.walking && !states.running) {
             input.backward = 0.5f;
         }
-
-        // Note: A/D turning is handled via player look direction in VehicleControlSystem
-        // The vehicle turns based on where the player is looking
-
-        // === SPACE (jump) → BRAKE ===
         if (states.jumping) {
             input.brake = true;
-            // Cancel the jump to prevent unwanted behavior
             states.jumping = false;
             states.swimJumping = false;
             movementComp.setMovementStates(states);
         }
-
-        // === SHIFT (sprint) → BOOST (more speed) ===
         if (states.sprinting) {
-            // Boost: increase forward input
-            input.forward = 1.5f; // Boost multiplier
+            input.forward = 1.5f;
         }
 
-        // Log applied input
-        if (debugTickCounter % 20 == 0) {
-            logger.info("[INPUT DEBUG] Applied input: forward=" + input.forward +
-                       ", backward=" + input.backward +
-                       ", brake=" + input.brake);
+        if (this.debugTickCounter % 100 == 0 && input.forward > 0) {
+            logger.info("[INPUT-DEBUG] WASD detected! forward=" + input.forward
+                + " (walking=" + states.walking + ", running=" + states.running
+                + ", sprinting=" + states.sprinting + ")");
         }
 
-        // Apply input to vehicle
         vehicle.setDriverInput(input);
     }
 
-    /**
-     * Update vehicle rowing animation based on current velocity.
-     * Animation plays when moving > 0.1 blocks/tick (2 blocks/second).
-     */
-    private void updateVehicleAnimation(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
-        float speed = vehicle.getHorizontalSpeed();
-        boolean hasDriver = vehicle.hasDriver();
-        boolean shouldAnimate = vehicle.shouldAnimate();
-        boolean isPlaying = vehicle.isAnimationPlaying();
-
-        // Log animation state changes only (not every tick)
-        // Add vehicle instance ID to track which boat is which
-        String vehicleId = vehicle.getInstanceId().toString().substring(0, 8);
-
-        // Log when animation state CHANGES or every 60 ticks for active boats
-        boolean logThis = (shouldAnimate != isPlaying) ||
-                         (debugTickCounter % 60 == 0 && (hasDriver || speed > 0.01f));
-
-        if (logThis) {
-            logger.info("[ANIM] ID:" + vehicleId + " " + vehicle.getDefinition().id +
-                       " speed=" + String.format("%.3f", speed) +
-                       " driver=" + hasDriver +
-                       " pass=" + vehicle.getPassengerCount() +
-                       " should=" + shouldAnimate +
-                       " playing=" + isPlaying);
-        }
-
-        if (shouldAnimate && !isPlaying) {
-            // Start rowing animation
-            try {
-                logger.info("Starting animation for " + vehicle.getDefinition().id +
-                           " (speed=" + String.format("%.2f", speed) +
-                           ", hasDriver=" + vehicle.hasDriver() + ")");
-
-                String[] possibleNames = {"rowing", "wiosloo", "row", "Rowing", "Row"};
-                boolean started = false;
-                for (String animName : possibleNames) {
-                    try {
-                        AnimationUtils.playAnimation(
-                            vehicleRef,
-                            AnimationSlot.Action,
-                            animName,
-                            store
-                        );
-                        logger.info("✓ Started animation: " + animName);
-                        started = true;
-                        break;
-                    } catch (Exception ignored) {
+    private void syncPositionToEntity(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
+        try {
+            // Periodically verify ref still points to our entity (detect ECS compaction drift)
+            if (vehicle.getNetworkId() >= 0 && this.debugTickCounter % 200 == 0) {
+                try {
+                    NetworkId refNetId = (NetworkId) store.getComponent(vehicleRef, NetworkId.getComponentType());
+                    if (refNetId != null && refNetId.getId() != vehicle.getNetworkId()) {
+                        logger.warning("[REF STALE] Vehicle " + vehicle.getDefinition().id
+                            + " entityRef points to NetworkId=" + refNetId.getId()
+                            + " but expected " + vehicle.getNetworkId()
+                            + " - position sync writing to WRONG entity!");
+                        return; // Don't write to wrong entity
                     }
+                } catch (Exception e) {
+                    // ref may be completely invalid - skip this tick
                 }
-                if (!started) {
-                    logger.warning("Could not start any animation");
+            }
+            TransformComponent transform = (TransformComponent) store.getComponent(vehicleRef, TransformComponent.getComponentType());
+            if (transform != null) {
+                Vec3 vehiclePos = vehicle.getPosition();
+                float vehicleYaw = vehicle.getRotationYaw();
+                float modelYOffset = vehicle.getDefinition().modelYOffset;
+                Vector3d oldPos = transform.getPosition();
+
+                // Log position changes for 20 ticks after dismount
+                int ticksSinceDismount = vehicle.getTicksSinceDismount();
+                if (ticksSinceDismount >= 0 && ticksSinceDismount < 20) {
+                    logger.info("[POST-DISMOUNT T+" + ticksSinceDismount + "] " + vehicle.getDefinition().id
+                        + " | Physics pos: (" + String.format("%.2f", vehiclePos.x) + ", " + String.format("%.2f", vehiclePos.y) + ", " + String.format("%.2f", vehiclePos.z) + ")"
+                        + " | Entity pos: (" + String.format("%.2f", oldPos.x) + ", " + String.format("%.2f", oldPos.y) + ", " + String.format("%.2f", oldPos.z) + ")"
+                        + " | Vel: (" + String.format("%.3f", vehicle.getVelocity().x) + ", " + String.format("%.3f", vehicle.getVelocity().y) + ", " + String.format("%.3f", vehicle.getVelocity().z) + ")");
                 }
-                vehicle.setAnimationPlaying(true);
-            } catch (Exception e) {
-                logger.warning("Failed to start animation: " + e.getMessage());
-                e.printStackTrace();
+
+                // Detect if Hytale modified TransformComponent between our syncs
+                float expectedX = vehiclePos.x;
+                float expectedY = vehiclePos.y + modelYOffset;
+                float expectedZ = vehiclePos.z;
+                float driftX = (float) Math.abs(oldPos.x - expectedX);
+                float driftZ = (float) Math.abs(oldPos.z - expectedZ);
+                float driftY = (float) Math.abs(oldPos.y - expectedY);
+                if (driftX > 1.0f || driftZ > 1.0f || driftY > 2.0f) {
+                    logger.warning("[POS JUMP] " + vehicle.getDefinition().id
+                        + " | Entity moved externally! Expected: (" + String.format("%.2f", expectedX) + ", " + String.format("%.2f", expectedY) + ", " + String.format("%.2f", expectedZ) + ")"
+                        + " | Actual: (" + String.format("%.2f", oldPos.x) + ", " + String.format("%.2f", oldPos.y) + ", " + String.format("%.2f", oldPos.z) + ")"
+                        + " | Drift: (" + String.format("%.2f", driftX) + ", " + String.format("%.2f", driftY) + ", " + String.format("%.2f", driftZ) + ")"
+                        + " | hasDriver=" + vehicle.hasDriver());
+                }
+
+                // Periodic position sync logging (reduced frequency)
+                if (this.debugTickCounter % 200 == 0 && vehicle.hasDriver()) {
+                    Vec3 vel = vehicle.getVelocity();
+                    logger.info("[POS SYNC] " + vehicle.getDefinition().id
+                        + " at (" + String.format("%.2f", vehiclePos.x) + ", " + String.format("%.2f", vehiclePos.y) + ", " + String.format("%.2f", vehiclePos.z) + ")"
+                        + " | Vel: (" + String.format("%.2f", vel.x) + ", " + String.format("%.2f", vel.z) + ")");
+                }
+                transform.setPosition(new Vector3d((double) vehiclePos.x, (double) (vehiclePos.y + modelYOffset), (double) vehiclePos.z));
+                transform.setRotation(new Vector3f(0.0f, vehicleYaw, 0.0f));
             }
-        } else if (!shouldAnimate && isPlaying) {
-            // Stop rowing animation
-            try {
-                logger.info("Stopping animation for " + vehicle.getDefinition().id +
-                           " (speed=" + String.format("%.2f", speed) +
-                           ", hasDriver=" + vehicle.hasDriver() + ")");
-                AnimationUtils.stopAnimation(
-                    vehicleRef,
-                    AnimationSlot.Action,
-                    store
-                );
-                vehicle.setAnimationPlaying(false);
-                logger.info("✓ Stopped animation");
-            } catch (Exception e) {
-                logger.warning("Failed to stop animation: " + e.getMessage());
-                e.printStackTrace();
+        } catch (Exception e) {
+            if (this.debugTickCounter % 60 == 0) {
+                logger.warning("[POSITION SYNC] Failed to sync position: " + e.getMessage());
             }
+        }
+    }
+
+    private void syncPositionFromEntity(BaseVehicle vehicle, Ref<EntityStore> vehicleRef, Store<EntityStore> store) {
+        try {
+            TransformComponent transform = (TransformComponent) store.getComponent(vehicleRef, TransformComponent.getComponentType());
+            if (transform != null) {
+                Vector3d entityPos = transform.getPosition();
+                Vector3f entityRot = transform.getRotation();
+                float modelYOffset = vehicle.getDefinition().modelYOffset;
+                vehicle.setPosition((float) entityPos.x, (float) entityPos.y - modelYOffset, (float) entityPos.z);
+                vehicle.setRotationYaw(entityRot.getYaw());
+            }
+        } catch (Exception e) {
+            // silently ignore
         }
     }
 }

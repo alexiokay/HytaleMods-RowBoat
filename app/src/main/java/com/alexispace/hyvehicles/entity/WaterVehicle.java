@@ -2,180 +2,164 @@ package com.alexispace.hyvehicles.entity;
 
 import com.alexispace.hyvehicles.definition.VehicleDefinition;
 import com.alexispace.hyvehicles.util.Vec3;
+import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.protocol.AnimationSlot;
+import com.hypixel.hytale.server.core.entity.AnimationUtils;
+import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 
-/**
- * Water-based vehicle with buoyancy physics.
- * 
- * <p>Handles boats and other water craft. Key physics:</p>
- * <ul>
- *   <li>Buoyancy - floats on water surface</li>
- *   <li>Water drag - slows down in water</li>
- *   <li>Gravity - falls when out of water</li>
- *   <li>Wave simulation (future)</li>
- * </ul>
- * 
- * <h2>Configuration via VehicleDefinition</h2>
- * <ul>
- *   <li>{@code buoyancy} - Force multiplier (default 1.0)</li>
- *   <li>{@code waterDrag} - Drag coefficient 0.0-1.0 (default 0.95)</li>
- *   <li>{@code maxSpeed} - Maximum speed in blocks/second</li>
- * </ul>
- * 
- * @since 1.0
- * @author alexispace
- */
 public class WaterVehicle extends BaseVehicle {
-    
-    // ==================== Constants ====================
-    
-    /**
-     * Gravity acceleration in blocks per second squared.
-     */
     private static final float GRAVITY = 20.0f;
-    
-    /**
-     * Default water level if spawn position unknown.
-     * TODO: Replace with actual water detection from Hytale world.
-     */
     private static final float DEFAULT_WATER_LEVEL = 64.0f;
-
-    /**
-     * Initial spawn Y - used as reference water level.
-     */
     private final float spawnY;
-    
-    /**
-     * How deep the boat sits in water (blocks below surface).
-     */
     private static final float WATER_OFFSET = 0.2f;
-    
-    // ==================== State ====================
-    
-    /**
-     * Whether currently in water.
-     */
     private boolean inWater = false;
-    
-    /**
-     * Water surface level at current position.
-     */
-    private float waterLevel = DEFAULT_WATER_LEVEL;
-    
-    /**
-     * Target Y position (for smooth floating).
-     */
+    private float waterLevel = 64.0f;
     private float targetY;
-    
-    // ==================== Constructor ====================
-    
+    private String currentAnimationDirection = null;
+
     public WaterVehicle(VehicleDefinition definition, Vec3 position, float yaw) {
         super(definition, position, yaw);
-        this.spawnY = position.y;  // Remember spawn Y as water level reference
+        this.spawnY = position.y;
         this.targetY = position.y;
     }
-    
-    // ==================== Physics ====================
-    
+
     @Override
     protected void updatePhysics(float deltaTime) {
-        // Detect water at current position
-        detectWater();
-        
-        if (inWater) {
-            updateWaterPhysics(deltaTime);
+        this.detectWater();
+        if (this.inWater) {
+            this.updateWaterPhysics(deltaTime);
         } else {
-            updateAirPhysics(deltaTime);
+            this.updateAirPhysics(deltaTime);
         }
-        
-        // Apply horizontal friction
-        velocity.x *= definition.friction;
-        velocity.z *= definition.friction;
+        this.velocity.x *= this.definition.friction;
+        this.velocity.z *= this.definition.friction;
     }
-    
-    /**
-     * Detect if the vehicle is in water.
-     * TODO: Replace with actual Hytale water block detection.
-     */
+
     private void detectWater() {
-        // Placeholder: check if below water level
-        // In actual implementation, we'd query Hytale's world for water blocks
-        // or check MovementStates.inFluid
-        
-        waterLevel = getWaterLevelAt(position.x, position.z);
-        inWater = position.y <= waterLevel + 0.5f; // Consider in water if close to surface
+        this.waterLevel = this.getWaterLevelAt(this.position.x, this.position.z);
+        this.inWater = this.position.y <= this.waterLevel + 0.5f;
     }
-    
-    /**
-     * Get water level at the given XZ position.
-     * Uses spawn Y as reference until actual Hytale water detection is implemented.
-     */
+
     private float getWaterLevelAt(float x, float z) {
-        // Use spawn Y as reference water level
-        // This assumes boats are spawned on water surface
-        // TODO: Replace with actual Hytale world water block query
-        return spawnY;
+        return this.spawnY;
     }
-    
-    /**
-     * Update physics while in water.
-     */
+
     private void updateWaterPhysics(float deltaTime) {
-        // Keep boat at stable Y level - don't let it sink
-        // Target is spawn Y minus small offset to sit in water
-        targetY = spawnY - WATER_OFFSET;
-
-        float distanceToTarget = targetY - position.y;
-
-        // Strong spring force to keep at target height
-        // This prevents sinking when driving over deeper water
+        this.targetY = this.spawnY - WATER_OFFSET;
+        float distanceToTarget = this.targetY - this.position.y;
         if (Math.abs(distanceToTarget) > 0.01f) {
-            // Push toward target with strong spring force
-            float springForce = distanceToTarget * 15.0f; // Strong spring constant
-            velocity.y += springForce * deltaTime;
+            float springForce = distanceToTarget * 15.0f;
+            this.velocity.y += springForce * deltaTime;
         }
-
-        // Heavy damping to prevent oscillation
-        velocity.y *= 0.8f;
-
-        // Apply water drag
-        velocity.x *= definition.waterDrag;
-        velocity.z *= definition.waterDrag;
-
-        // Clamp vertical velocity - very limited to prevent bouncing
-        velocity.y = Math.max(-2.0f, Math.min(2.0f, velocity.y));
+        this.velocity.y *= 0.8f;
+        this.velocity.x *= this.definition.waterDrag;
+        this.velocity.z *= this.definition.waterDrag;
+        this.velocity.y = Math.max(-2.0f, Math.min(2.0f, this.velocity.y));
     }
-    
-    /**
-     * Update physics while in air (falling).
-     */
+
     private void updateAirPhysics(float deltaTime) {
-        // Apply gravity
-        velocity.y -= GRAVITY * deltaTime;
-        
-        // Terminal velocity
-        velocity.y = Math.max(-50.0f, velocity.y);
+        this.velocity.y -= GRAVITY * deltaTime;
+        this.velocity.y = Math.max(-50.0f, this.velocity.y);
     }
-    
-    // ==================== Input Processing ====================
-    
+
     @Override
     protected void processDriverInput(float deltaTime) {
-        // Only allow control while in water
-        if (inWater) {
+        if (this.inWater) {
             super.processDriverInput(deltaTime);
         } else {
-            // Limited air control
-            angularVelocity *= 0.95f;
+            this.angularVelocity *= 0.95f;
         }
     }
-    
-    // ==================== Getters ====================
-    
-    public boolean isInWater() {
-        return inWater;
+
+    @Override
+    protected void updateRowingAnimation() {
+        if (this.ticksExisted % 20L == 0L && this.driver != null) {
+            System.out.println("[AnimDebug] speed=" + String.format("%.4f", this.actualSpeed)
+                + " inWater=" + this.inWater
+                + " forward=" + this.isMovingForward
+                + " threshold=1.0E-4 shouldAnimate=" + (this.actualSpeed > MIN_ANIMATION_SPEED && this.inWater));
+        }
+        if (this.actualSpeed > MIN_ANIMATION_SPEED && this.inWater) {
+            if (this.isMovingForward) {
+                this.playRowingAnimation("forward", this.actualSpeed);
+            } else {
+                this.playRowingAnimation("backward", this.actualSpeed);
+            }
+        } else {
+            this.stopRowingAnimation();
+        }
     }
-    
+
+    private void playRowingAnimation(String direction, float speed) {
+        float animationSpeed = Math.min(speed * 20.0f, 2.0f);
+        if (!this.isAnimationPlaying || !direction.equals(this.currentAnimationDirection)) {
+            System.out.println("[RowingAnim] START: " + direction
+                + " | speed=" + String.format("%.3f", speed)
+                + " | animSpeed=" + String.format("%.2f", animationSpeed) + "x");
+            this.isAnimationPlaying = true;
+            this.currentAnimationDirection = direction;
+            if (this.entityRef != null && this.world != null) {
+                try {
+                    Store store = this.world.getEntityStore().getStore();
+                    System.out.println("[RowingAnim] DEBUG: entityRef=" + this.entityRef
+                        + ", isValid=" + this.entityRef.isValid()
+                        + ", driver=" + (this.driver != null ? this.driver.passengerId : "null"));
+                    if (this.entityRef.isValid()) {
+                        try {
+                            NetworkId netId = (NetworkId) store.getComponent(this.entityRef, NetworkId.getComponentType());
+                            System.out.println("[RowingAnim] DEBUG: Vehicle NetworkId=" + (netId != null ? netId.getId() : "null"));
+                        } catch (Exception ex) {
+                            System.out.println("[RowingAnim] DEBUG: Could not get NetworkId: " + ex.getMessage());
+                        }
+                    }
+                    AnimationUtils.playAnimation(this.entityRef, AnimationSlot.Movement, "rowing", store);
+                    System.out.println("[RowingAnim] Triggered Hytale 'rowing' animation (Action slot)");
+                } catch (IllegalStateException e) {
+                    // Silently ignore threading errors - animation is cosmetic
+                    // This happens when vehicle entity is in a different WorldThread
+                } catch (Exception e) {
+                    System.out.println("[RowingAnim] ERROR triggering animation: " + e.getMessage());
+                }
+            } else {
+                System.out.println("[RowingAnim] SKIP: entityRef=" + this.entityRef + ", world=" + this.world);
+            }
+        }
+    }
+
+    private void stopRowingAnimation() {
+        if (this.isAnimationPlaying) {
+            System.out.println("[RowingAnim] STOP: Idle (was: " + this.currentAnimationDirection + ")");
+            this.isAnimationPlaying = false;
+            this.currentAnimationDirection = null;
+            if (this.entityRef != null && this.world != null) {
+                try {
+                    Store store = this.world.getEntityStore().getStore();
+                    AnimationUtils.stopAnimation(this.entityRef, AnimationSlot.Movement, store);
+                    System.out.println("[RowingAnim] Stopped Hytale animation (Action slot)");
+                } catch (IllegalStateException e) {
+                    // Silently ignore threading errors - animation is cosmetic
+                } catch (Exception e) {
+                    System.out.println("[RowingAnim] ERROR stopping animation: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void onDismount(BaseVehicle.PassengerInfo passenger) {
+        System.out.println("[WaterVehicle] onDismount called - forcing animation stop");
+        this.stopRowingAnimation();
+        this.isAnimationPlaying = false;
+        this.currentAnimationDirection = null;
+        this.actualSpeed = 0.0f;
+        System.out.println("[WaterVehicle] Animation state cleared on dismount");
+    }
+
+    public boolean isInWater() {
+        return this.inWater;
+    }
+
     public float getWaterLevel() {
-        return waterLevel;
+        return this.waterLevel;
     }
 }

@@ -1,0 +1,5 @@
+{
+  "Id": "Vehicle",
+  "CollisionType": "Hard",
+  "SoftCollisionOffsetRatio": 0.0
+}

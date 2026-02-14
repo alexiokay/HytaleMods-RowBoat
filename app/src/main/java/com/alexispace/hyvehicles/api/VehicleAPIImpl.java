@@ -4,23 +4,18 @@ import com.alexispace.hyvehicles.definition.VehicleDefinition;
 import com.alexispace.hyvehicles.entity.BaseVehicle;
 import com.alexispace.hyvehicles.entity.VehicleEntityBridge;
 import com.alexispace.hyvehicles.registry.VehicleRegistry;
-import com.alexispace.hyvehicles.util.VehicleLogger;
 import com.alexispace.hyvehicles.util.Vec3;
-import com.hypixel.hytale.component.Ref;
+import com.alexispace.hyvehicles.util.VehicleLogger;
 import com.hypixel.hytale.component.CommandBuffer;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.math.vector.Vector3d;
+import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
-import com.hypixel.hytale.math.vector.Vector3d;
-
 import java.util.Collection;
 
-/**
- * Implementation of the VehicleAPI.
- * 
- * @since 1.0
- * @author alexispace
- */
 public class VehicleAPIImpl implements VehicleAPI {
 
     private final VehicleRegistry registry;
@@ -31,132 +26,129 @@ public class VehicleAPIImpl implements VehicleAPI {
         this.registry = registry;
         this.logger = logger;
         this.entityBridge = new VehicleEntityBridge(logger);
-
-        // Set up destruction listener to handle particles and item drops
         registry.setDestructionListener((vehicle, commandBuffer) -> {
             World world = vehicle.getWorld();
             if (world != null) {
                 Vec3 pos = vehicle.getPosition();
-                Vector3d position = new Vector3d(pos.x, pos.y, pos.z);
-                entityBridge.onVehicleDestroyed(world, position, vehicle.getDefinition(), commandBuffer);
+                Vector3d position = new Vector3d((double) pos.x, (double) pos.y, (double) pos.z);
+                this.entityBridge.onVehicleDestroyed(world, position, vehicle.getDefinition(), commandBuffer);
             }
         });
     }
-    
+
     @Override
     public void registerVehicle(VehicleDefinition definition) {
-        registry.registerDefinition(definition);
+        this.registry.registerDefinition(definition);
     }
-    
+
     @Override
     public VehicleHandle spawnVehicle(String vehicleId, Vec3 position, float yaw, World world) {
+        Ref<EntityStore> entityRef;
         if (world == null) {
-            logger.warning("spawnVehicle called with null world");
+            this.logger.warning("spawnVehicle called with null world");
             return null;
         }
-
-        VehicleDefinition definition = registry.getDefinition(vehicleId);
+        VehicleDefinition definition = this.registry.getDefinition(vehicleId);
         if (definition == null) {
             throw new IllegalArgumentException("Vehicle not registered: " + vehicleId);
         }
-
-        VehicleTypeCreator creator = registry.getCreator(definition.type);
+        VehicleTypeCreator creator = this.registry.getCreator(definition.type);
         if (creator == null) {
             throw new IllegalStateException("No creator for type: " + definition.type);
         }
-
-        // Create the vehicle physics simulation
         BaseVehicle vehicle = creator.createVehicle(definition, position, yaw);
-        vehicle.setWorld(world);  // Store world reference for destruction effects
-
-        // Track it in our registry
-        registry.trackVehicle(vehicle);
-
-        // Spawn Hytale entity using the world's store directly (only safe outside of tick processing)
-        Ref<EntityStore> entityRef = entityBridge.spawnEntity(vehicle, world);
-        if (entityRef != null) {
-            vehicle.setEntityRef(entityRef);  // Link vehicle to Hytale entity for cleanup detection
-            logger.info("Spawned vehicle: " + vehicleId + " at " + position);
-        } else {
-            logger.warning("Created vehicle but failed to spawn entity: " + vehicleId);
+        vehicle.setWorld(world);
+        this.registry.trackVehicle(vehicle);
+        this.registry.setSpawning(true);
+        try {
+            entityRef = this.entityBridge.spawnEntity(vehicle, world);
+        } finally {
+            this.registry.setSpawning(false);
         }
-
-        return new VehicleHandleImpl(vehicle, registry, entityRef, world, entityBridge);
+        if (entityRef != null) {
+            vehicle.setEntityRef(entityRef);
+            try {
+                Store<EntityStore> store = world.getEntityStore().getStore();
+                NetworkId netId = (NetworkId) store.getComponent(entityRef, NetworkId.getComponentType());
+                if (netId != null) {
+                    vehicle.setNetworkId(netId.getId());
+                    this.logger.info("Spawned vehicle: " + vehicleId + " at " + position + " | networkId=" + netId.getId() + ", refIndex=" + entityRef.getIndex());
+                }
+            } catch (Exception e) {
+                this.logger.warning("Could not read NetworkId for " + vehicleId + ": " + e.getMessage());
+            }
+        } else {
+            this.logger.warning("Failed to spawn entity for vehicle: " + vehicleId + " - untracking ghost vehicle");
+            this.registry.untrackVehicle(vehicle.getInstanceId());
+            return null;
+        }
+        return new VehicleHandleImpl(vehicle, this.registry, entityRef, world, this.entityBridge);
     }
 
     @Override
     public VehicleHandle spawnVehicleWithCommandBuffer(String vehicleId, Vec3 position, float yaw, CommandBuffer commandBuffer) {
-        VehicleDefinition definition = registry.getDefinition(vehicleId);
+        Ref<EntityStore> entityRef;
+        VehicleDefinition definition = this.registry.getDefinition(vehicleId);
         if (definition == null) {
             throw new IllegalArgumentException("Vehicle not registered: " + vehicleId);
         }
-
-        VehicleTypeCreator creator = registry.getCreator(definition.type);
+        VehicleTypeCreator creator = this.registry.getCreator(definition.type);
         if (creator == null) {
             throw new IllegalStateException("No creator for type: " + definition.type);
         }
-
-        // Create the vehicle physics simulation
         BaseVehicle vehicle = creator.createVehicle(definition, position, yaw);
-
-        // Try to get World from CommandBuffer's store
         World world = null;
         try {
-            @SuppressWarnings("unchecked")
-            com.hypixel.hytale.component.Store<EntityStore> store =
-                (com.hypixel.hytale.component.Store<EntityStore>) commandBuffer.getStore();
-            EntityStore entityStore = store.getExternalData();
+            Store store = commandBuffer.getStore();
+            EntityStore entityStore = (EntityStore) store.getExternalData();
             world = entityStore.getWorld();
         } catch (Exception e) {
-            logger.warning("Could not get World from CommandBuffer: " + e.getMessage());
+            this.logger.warning("Could not get World from CommandBuffer: " + e.getMessage());
         }
-        vehicle.setWorld(world);  // Store world reference for destruction effects
-
-        // Track it in our registry
-        registry.trackVehicle(vehicle);
-
-        // Spawn Hytale entity using CommandBuffer for deferred execution
-        Ref<EntityStore> entityRef = entityBridge.spawnEntityWithCommandBuffer(vehicle, commandBuffer);
+        vehicle.setWorld(world);
+        this.registry.trackVehicle(vehicle);
+        this.registry.setSpawning(true);
+        try {
+            entityRef = this.entityBridge.spawnEntityWithCommandBuffer(vehicle, commandBuffer);
+        } finally {
+            this.registry.setSpawning(false);
+        }
         if (entityRef != null) {
-            vehicle.setEntityRef(entityRef);  // Link vehicle to Hytale entity for cleanup detection
-            logger.info("Spawned vehicle (deferred): " + vehicleId + " at " + position);
+            vehicle.setEntityRef(entityRef);
+            // NetworkId is now set directly in spawnEntityWithCommandBuffer() at spawn time
+            this.logger.info("Spawned vehicle (deferred): " + vehicleId + " at " + position + " | networkId=" + vehicle.getNetworkId());
         } else {
-            logger.warning("Created vehicle but failed to spawn entity: " + vehicleId);
+            this.logger.warning("Created vehicle but failed to spawn entity: " + vehicleId);
         }
-
-        return new VehicleHandleImpl(vehicle, registry, entityRef, world, entityBridge);
+        return new VehicleHandleImpl(vehicle, this.registry, entityRef, world, this.entityBridge);
     }
-    
+
     @Override
     public Collection<String> getRegisteredVehicles() {
-        return registry.getRegisteredVehicles();
-    }
-    
-    @Override
-    public Collection<String> getRegisteredTypes() {
-        return registry.getRegisteredTypes();
-    }
-    
-    @Override
-    public boolean isTypeRegistered(String typeName) {
-        return registry.hasCreator(typeName);
-    }
-    
-    @Override
-    public void registerVehicleCreator(String typeName, VehicleTypeCreator creator) {
-        registry.registerCreator(typeName, creator);
-    }
-    
-    @Override
-    public VehicleDefinition getVehicleDefinition(String vehicleId) {
-        return registry.getDefinition(vehicleId);
+        return this.registry.getRegisteredVehicles();
     }
 
-    /**
-     * Get the entity bridge for direct entity operations.
-     * Used by VehicleDeathSystem for item drops after world reload.
-     */
+    @Override
+    public Collection<String> getRegisteredTypes() {
+        return this.registry.getRegisteredTypes();
+    }
+
+    @Override
+    public boolean isTypeRegistered(String typeName) {
+        return this.registry.hasCreator(typeName);
+    }
+
+    @Override
+    public void registerVehicleCreator(String typeName, VehicleTypeCreator creator) {
+        this.registry.registerCreator(typeName, creator);
+    }
+
+    @Override
+    public VehicleDefinition getVehicleDefinition(String vehicleId) {
+        return this.registry.getDefinition(vehicleId);
+    }
+
     public VehicleEntityBridge getEntityBridge() {
-        return entityBridge;
+        return this.entityBridge;
     }
 }

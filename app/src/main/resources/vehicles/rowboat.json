@@ -25,7 +25,7 @@
   ],
 
   "model": "models/rowboat.obj",
-  "texture": "textures/rowboat.png",
+  "texture": "textures/dark_wood_brighter.png",
   "modelId": "Rowboat_Model",
   "modelScale": 1.0,
   "modelYOffset": -0.3,

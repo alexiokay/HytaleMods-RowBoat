@@ -1,0 +1,89 @@
+{
+  "Type": "Generic",
+  "Appearance": "Rowboat_Model",
+  "DropList": "Drop_NpcRowboat",
+  "BreathesInWater": true,
+  "MotionControllerList": [
+    {
+      "Type": "Dive",
+      "MaxSwimSpeed": 3,
+      "MaxDiveSpeed": 0.5,
+      "MaxSinkSpeed": 0.1,
+      "Gravity": 2,
+      "Acceleration": 2,
+      "MaxRotationSpeed": 360,
+      "SwimDepth": 0,
+      "DesiredDepthWeight": 1.0,
+      "MinDepthBelowSurface": 0,
+      "SinkRatio": 0
+    }
+  ],
+  "MaxHealth": {
+    "Compute": "MaxHealth"
+  },
+  "Parameters": {
+    "MaxHealth": {
+      "Value": 40,
+      "Description": "Max health for the NPC boat"
+    }
+  },
+  "IsMemory": false,
+  "IsMountable": true,
+  "MountAnchorX": 0,
+  "MountAnchorY": 1.5,
+  "MountAnchorZ": 0.3,
+  "MountMovementConfig": "Montar",
+  "Instructions": [
+    {
+      "Instructions": [
+        {
+          "Sensor": {
+            "Type": "Any"
+          },
+          "Actions": [
+            {
+              "Type": "PlayAnimation",
+              "Slot": "Action",
+              "Animation": "rowing",
+              "Once": false,
+              "Speed": 1.5
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "InteractionInstruction": {
+    "Enabled": true,
+    "Instructions": [
+      {
+        "Continue": true,
+        "Sensor": {
+          "Type": "Any"
+        },
+        "Actions": [
+          {
+            "Type": "SetInteractable",
+            "Interactable": true,
+            "Hint": "server.interactionHints.mount"
+          }
+        ]
+      },
+      {
+        "Sensor": {
+          "Type": "HasInteracted"
+        },
+        "Actions": [
+          {
+            "Type": "Mount",
+            "AnchorX": 0,
+            "AnchorY": 1.5,
+            "AnchorZ": 0.3,
+            "MovementConfig": "Montar"
+          }
+        ]
+      }
+    ]
+  },
+  "NameTranslationKey": "server.npcRoles.NpcRowboat.name"
+}
