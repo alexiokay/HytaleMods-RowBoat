@@ -30,7 +30,7 @@
   "IsMemory": false,
   "IsMountable": true,
   "MountAnchorX": 0,
-  "MountAnchorY": 0.5,
+  "MountAnchorY": 0.75,
   "MountAnchorZ": 0,
   "MountMovementConfig": "Montar",
   "Instructions": [
@@ -120,7 +120,7 @@
           {
             "Type": "Mount",
             "AnchorX": 0,
-            "AnchorY": 0.5,
+            "AnchorY": 0.75,
             "AnchorZ": 0,
             "MovementConfig": "Montar"
           }

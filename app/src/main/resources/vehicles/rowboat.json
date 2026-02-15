@@ -18,17 +18,17 @@
   "collisionLength": 2.5,
 
   "seats": [
-    { "x": 0.0, "y": 1.2, "z": 2.1, "isDriver": false, "canControl": false },
-    { "x": 0.0, "y": 1.2, "z": 1.15, "isDriver": false, "canControl": false },
-    { "x": 0.0, "y": 1.2, "z": -0.15 , "isDriver": false, "canControl": false },
-    { "x": 0.0, "y": 1.2, "z": -1.4 , "isDriver": true, "canControl": true }
+    { "x": 0.0, "y": 1.45, "z": 2.1, "isDriver": false, "canControl": false },
+    { "x": 0.0, "y": 1.45, "z": 1.15, "isDriver": false, "canControl": false },
+    { "x": 0.0, "y": 1.45, "z": -0.15 , "isDriver": false, "canControl": false },
+    { "x": 0.0, "y": 1.45, "z": -1.4 , "isDriver": true, "canControl": true }
   ],
 
   "model": "models/rowboat.obj",
   "texture": "textures/dark_wood_brighter.png",
   "modelId": "Rowboat_Model",
   "modelScale": 1.0,
-  "modelYOffset": -0.3,
+  "modelYOffset": 0,
 
   "dropItemId": "HytaleVehicles_Rowboat",
   "dropQuantity": 1

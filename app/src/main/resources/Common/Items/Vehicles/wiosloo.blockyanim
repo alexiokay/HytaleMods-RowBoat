@@ -13,7 +13,7 @@
         },
         {
           "time": 108,
-          "delta": {"x": 0, "y": -0.79335, "z": 0, "w": 0.60876},
+          "delta": {"x": 0, "y": -0.60876, "z": 0, "w": 0.79335},
           "interpolationType": "smooth"
         }
       ],
@@ -26,12 +26,12 @@
       "orientation": [
         {
           "time": 0,
-          "delta": {"x": 0, "y": 0, "z": 0, "w": 1},
+          "delta": {"x": 0, "y": 0, "z": 1, "w": 0},
           "interpolationType": "smooth"
         },
         {
           "time": 108,
-          "delta": {"x": 0, "y": 0.79335, "z": 0, "w": 0.60876},
+          "delta": {"x": 0.60876, "y": 0, "z": 0.79335, "w": 0},
           "interpolationType": "smooth"
         }
       ],

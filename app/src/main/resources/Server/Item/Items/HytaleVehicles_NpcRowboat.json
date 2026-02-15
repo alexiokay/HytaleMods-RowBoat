@@ -5,10 +5,10 @@
     "Description": "A boat with working rowing animation. Uses NPC system."
   },
   "Icon": "Icons/ItemsGenerated/rowboat_icon.png",
-  "Model": "Items/HytaleVehicles_Rowboat/new_boat.blockymodel",
+  "Model": "Items/HytaleVehicles_Rowboat/new_boat_held.blockymodel",
   "Texture": "Items/HytaleVehicles_Rowboat/dark_wood_brighter.png",
-  "Scale": 0.15,
   "PlayerAnimationsId": "Block",
+  "Scale": 0.2,
   "Quality": "Common",
   "MaxStack": 1,
   "Categories": ["VehiclesCategory.Boats"],
@@ -21,7 +21,7 @@
           "Type": "SpawnNPC",
           "EntityId": "NpcRowboat",
           "SpawnOffset": {
-            "Y": 1,
+            "Y": 0.75,
             "Z": 0.3
           }
         },
