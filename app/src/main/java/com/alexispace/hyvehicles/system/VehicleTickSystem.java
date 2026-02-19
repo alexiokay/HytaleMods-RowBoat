@@ -7,6 +7,8 @@ import com.alexispace.hyvehicles.entity.VehicleDataComponent;
 import com.alexispace.hyvehicles.registry.VehicleRegistry;
 import com.alexispace.hyvehicles.util.Vec3;
 import com.alexispace.hyvehicles.util.VehicleLogger;
+import com.hypixel.hytale.component.Archetype;
+import com.hypixel.hytale.component.ArchetypeChunk;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.system.tick.TickingSystem;
@@ -32,26 +34,12 @@ public class VehicleTickSystem extends TickingSystem<EntityStore> {
         VehicleRegistry registry = plugin.getRegistry();
         if (registry == null) return;
 
-        // Resolve NetworkIds for vehicles spawned via CommandBuffer (deferred).
-        // The NetworkId can't be read at spawn time because the entity isn't in the
-        // store yet. On the next tick after the CommandBuffer flushes, we can read it.
-        for (BaseVehicle vehicle : registry.getAllVehicles()) {
-            if (vehicle.getNetworkId() < 0) {
-                Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                if (vehicleRef != null && vehicleRef.isValid()) {
-                    try {
-                        NetworkId netId = (NetworkId) store.getComponent(vehicleRef, NetworkId.getComponentType());
-                        if (netId != null && netId.getId() >= 0) {
-                            vehicle.setNetworkId(netId.getId());
-                            logger.info("[NETWORK-ID] Resolved deferred NetworkId=" + netId.getId()
-                                + " for vehicle " + vehicle.getDefinition().id);
-                        }
-                    } catch (Exception e) {
-                        // Entity may not be committed yet, try again next tick
-                    }
-                }
-            }
-        }
+        // CRITICAL: Refresh all vehicle entity Refs by iterating ECS chunks.
+        // Hytale's ECS moves entities between archetype chunks when components are
+        // added/removed (e.g. internal systems adding physics/network components after
+        // spawn). This invalidates the Ref returned by store.addEntity(). By iterating
+        // chunks each tick, we get fresh Refs that point to the correct archetype/index.
+        this.refreshVehicleRefs(store, registry);
 
         VehicleMountSystem mountSystem = plugin.getMountSystem();
         if (mountSystem != null) {
@@ -78,6 +66,37 @@ public class VehicleTickSystem extends TickingSystem<EntityStore> {
             this.syncPositionToEntity(vehicle, vehicleRef, store);
             if (savePosition) {
                 this.persistPosition(vehicle, vehicleRef, store);
+            }
+        }
+    }
+
+    private void refreshVehicleRefs(Store<EntityStore> store, VehicleRegistry registry) {
+        try {
+            com.hypixel.hytale.component.query.Query<EntityStore> vehicleQuery =
+                Archetype.of(VehicleDataComponent.getComponentType());
+            java.util.function.BiConsumer<ArchetypeChunk<EntityStore>, com.hypixel.hytale.component.CommandBuffer<EntityStore>> refresher =
+                (chunk, commandBuffer) -> {
+                    for (int i = 0; i < chunk.size(); i++) {
+                        try {
+                            NetworkId netId = chunk.getComponent(i, NetworkId.getComponentType());
+                            if (netId == null || netId.getId() < 0) continue;
+
+                            BaseVehicle vehicle = registry.getVehicleByNetworkId(netId.getId());
+                            if (vehicle == null) continue;
+
+                            Ref<EntityStore> freshRef = chunk.getReferenceTo(i);
+                            if (freshRef != null && freshRef.isValid()) {
+                                vehicle.setEntityRef(freshRef);
+                            }
+                        } catch (Exception e) {
+                            // Skip entities we can't read
+                        }
+                    }
+                };
+            store.forEachChunk(vehicleQuery, refresher);
+        } catch (Exception e) {
+            if (debugTickCounter % 200 == 0) {
+                logger.warning("[REF REFRESH] Failed to iterate chunks: " + e.getMessage());
             }
         }
     }

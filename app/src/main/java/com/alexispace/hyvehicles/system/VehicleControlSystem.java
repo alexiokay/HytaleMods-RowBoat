@@ -12,14 +12,13 @@ import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.component.system.RefChangeSystem;
 import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.protocol.packets.interaction.DismountNPC;
-import com.hypixel.hytale.server.core.entity.entities.Player;
+import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.entity.entities.player.movement.MovementManager;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * ECS system that reacts to MountedByComponent changes on vehicle entities.
@@ -73,11 +72,11 @@ public class VehicleControlSystem extends RefChangeSystem<EntityStore, MountedBy
                     continue;
                 }
                 try {
-                    Player playerComp = store.getComponent(passengerRef, Player.getComponentType());
-                    if (playerComp == null) {
+                    UUIDComponent uuidComp = store.getComponent(passengerRef, UUIDComponent.getComponentType());
+                    if (uuidComp == null) {
                         continue;
                     }
-                    PlayerRef playerRef = playerComp.getPlayerRef();
+                    PlayerRef playerRef = mountSystem != null ? mountSystem.getPlayerRefByUuid(uuidComp.getUuid()) : null;
                     if (playerRef == null) {
                         continue;
                     }
@@ -98,11 +97,19 @@ public class VehicleControlSystem extends RefChangeSystem<EntityStore, MountedBy
                     } catch (Exception e) {
                         logger.warning("Could not send DismountNPC packet: " + e.getMessage());
                     }
-                    // Clean up BaseVehicle tracking
+                    // Clean up BaseVehicle tracking (use NetworkId, not Ref.equals)
                     if (registry != null) {
-                        BaseVehicle vehicle = registry.getVehicleByEntityRef(vehicleRef);
-                        if (vehicle != null) {
-                            vehicle.dismount(playerRef.getUuid());
+                        try {
+                            com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId netId =
+                                store.getComponent(vehicleRef, com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId.getComponentType());
+                            if (netId != null && netId.getId() >= 0) {
+                                BaseVehicle vehicle = registry.getVehicleByNetworkId(netId.getId());
+                                if (vehicle != null) {
+                                    vehicle.dismount(playerRef.getUuid());
+                                }
+                            }
+                        } catch (Exception ex) {
+                            logger.warning("Could not look up vehicle by NetworkId: " + ex.getMessage());
                         }
                     }
                     logger.info("Auto-dismounted passenger from destroyed vehicle");

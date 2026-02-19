@@ -16,20 +16,10 @@
   "Interactions": {
     "Primary": "Block_Primary",
     "Secondary": {
-      "Interactions": [
-        {
-          "Type": "SpawnNPC",
-          "EntityId": "NpcRowboat",
-          "SpawnOffset": {
-            "Y": 0.75,
-            "Z": 0.3
-          }
-        },
-        {
-          "Type": "ModifyInventory",
-          "AdjustHeldItemQuantity": -1
-        }
-      ]
+      "Interactions": [{
+          "Type": "hyvehicles_spawn_npc_boat",
+          "EntityId": "NpcRowboat"
+      }]
     }
   },
 

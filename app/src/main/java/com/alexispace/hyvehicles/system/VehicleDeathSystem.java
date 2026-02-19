@@ -13,6 +13,7 @@ import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.query.Query;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.modules.entity.damage.Damage;
 import com.hypixel.hytale.server.core.modules.entity.damage.DeathComponent;
 import com.hypixel.hytale.server.core.modules.entity.damage.DeathSystems;
@@ -73,12 +74,14 @@ public class VehicleDeathSystem extends DeathSystems.OnDeathSystem {
             }
             VehicleRegistry registry;
             if ((registry = plugin.getRegistry()) != null) {
-                for (BaseVehicle vehicle : registry.getAllVehicles()) {
-                    Ref<EntityStore> vehicleRef = vehicle.getEntityRef();
-                    if (vehicleRef != null && vehicleRef.equals(entityRef)) {
+                // Match by NetworkId (stable identity), not Ref.equals() which is unreliable
+                // after ECS archetype changes
+                NetworkId deadNetId = entityStore.getComponent(entityRef, NetworkId.getComponentType());
+                if (deadNetId != null && deadNetId.getId() >= 0) {
+                    BaseVehicle vehicle = registry.getVehicleByNetworkId(deadNetId.getId());
+                    if (vehicle != null) {
                         vehicle.destroy();
                         logger.info("Cleaned up tracked vehicle: " + vehicle.getInstanceId());
-                        break;
                     }
                 }
             }

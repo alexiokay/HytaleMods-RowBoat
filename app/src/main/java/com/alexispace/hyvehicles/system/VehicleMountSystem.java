@@ -66,7 +66,7 @@ public class VehicleMountSystem {
             this.logger.info("MountNPC packet: offset=(" + seatOffsetX + ", " + seatOffsetY + ", " + seatOffsetZ + "), networkId=" + vehicleNetworkId);
             player.getPacketHandler().write(mountPacket);
             this.applyMovementConfig(player, store, "Montar");
-            this.mountedPlayers.put(playerUUID, new MountInfo(player, vehicleRef, seatIndex, vehicleNetworkId));
+            this.mountedPlayers.put(playerUUID, new MountInfo(player, vehicleRef, seatIndex, vehicleNetworkId, seatOffsetX, seatOffsetY, seatOffsetZ));
             try {
                 BaseVehicle vehicle;
                 VehicleRegistry registry;
@@ -228,48 +228,48 @@ public class VehicleMountSystem {
                 }
             }
 
-            // CRITICAL: Force-sync vehicle position to client EVERY TICK while mounted
-            // Hytale's mount system doesn't auto-sync position changes, causing desync
+            // Sync mounted player's TransformComponent to vehicle + seat offset.
+            // This makes other clients see the player at the correct position on the vehicle.
+            // Vehicle position itself is synced via TransformComponent in VehicleTickSystem.syncPositionToEntity(),
+            // which Hytale's entity tracker replicates to all clients automatically.
+            // We do NOT send EntityUpdates packets here — that would conflict with the entity tracker
+            // and cause rapid position teleporting on other clients.
             try {
                 HytaleVehiclesPlugin plugin = HytaleVehiclesPlugin.getInstance();
                 if (plugin != null) {
                     VehicleRegistry registry = plugin.getRegistry();
                     if (registry != null) {
                         BaseVehicle vehicle = registry.getVehicleByNetworkId(mountInfo.vehicleNetworkId);
-                        if (vehicle != null && vehicle.getWorld() != null) {
+                        if (vehicle != null) {
                             com.alexispace.hyvehicles.util.Vec3 currentPos = vehicle.getPosition();
                             float currentYaw = vehicle.getRotationYaw();
                             float modelYOffset = vehicle.getDefinition().modelYOffset;
 
-                            // Build and send EntityUpdates packet
-                            com.hypixel.hytale.protocol.Position protocolPos = new com.hypixel.hytale.protocol.Position(
-                                (double) currentPos.x,
-                                (double) (currentPos.y + modelYOffset),
-                                (double) currentPos.z
-                            );
-                            com.hypixel.hytale.protocol.Direction orientation = new com.hypixel.hytale.protocol.Direction(currentYaw, 0f, 0f);
-                            com.hypixel.hytale.protocol.ModelTransform modelTransform = new com.hypixel.hytale.protocol.ModelTransform(protocolPos, orientation, orientation);
+                            try {
+                                Ref<EntityStore> playerEntityRef = player.getReference();
+                                if (playerEntityRef != null && playerEntityRef.isValid()) {
+                                    TransformComponent playerTransform = store.getComponent(playerEntityRef, TransformComponent.getComponentType());
+                                    if (playerTransform != null) {
+                                        // Rotate seat offset from entity-local to world coordinates
+                                        float rad = (float) Math.toRadians(currentYaw);
+                                        float sinYaw = (float) Math.sin(rad);
+                                        float cosYaw = (float) Math.cos(rad);
+                                        float worldOffsetX = mountInfo.seatOffsetX * cosYaw + mountInfo.seatOffsetZ * sinYaw;
+                                        float worldOffsetZ = -mountInfo.seatOffsetX * sinYaw + mountInfo.seatOffsetZ * cosYaw;
 
-                            com.hypixel.hytale.protocol.ComponentUpdate transformUpdate = new com.hypixel.hytale.protocol.ComponentUpdate();
-                            transformUpdate.type = com.hypixel.hytale.protocol.ComponentUpdateType.Transform;
-                            transformUpdate.transform = modelTransform;
+                                        double playerX = (double) currentPos.x + worldOffsetX;
+                                        double playerY = (double) (currentPos.y + modelYOffset) + mountInfo.seatOffsetY;
+                                        double playerZ = (double) currentPos.z + worldOffsetZ;
 
-                            com.hypixel.hytale.protocol.EntityUpdate entityUpdate = new com.hypixel.hytale.protocol.EntityUpdate(
-                                mountInfo.vehicleNetworkId,
-                                new com.hypixel.hytale.protocol.ComponentUpdateType[] {},
-                                new com.hypixel.hytale.protocol.ComponentUpdate[] { transformUpdate }
-                            );
-
-                            com.hypixel.hytale.protocol.packets.entities.EntityUpdates syncPacket = new com.hypixel.hytale.protocol.packets.entities.EntityUpdates(
-                                new int[] {},
-                                new com.hypixel.hytale.protocol.EntityUpdate[] { entityUpdate }
-                            );
-
-                            // Send only to mounted player (not all players - too expensive)
-                            player.getPacketHandler().writeNoCache(syncPacket);
+                                        playerTransform.setPosition(new Vector3d(playerX, playerY, playerZ));
+                                    }
+                                }
+                            } catch (Exception ex) {
+                                // Player ref may be stale, ignore
+                            }
 
                             if (shouldLog) {
-                                this.logger.info("[PER-TICK SYNC] Sent position update to mounted player - vehicle pos: ("
+                                this.logger.info("[PER-TICK SYNC] Synced rider position to vehicle: ("
                                     + String.format("%.2f", currentPos.x) + ", "
                                     + String.format("%.2f", currentPos.y + modelYOffset) + ", "
                                     + String.format("%.2f", currentPos.z) + ")");
@@ -279,7 +279,7 @@ public class VehicleMountSystem {
                 }
             } catch (Exception e) {
                 if (shouldLog) {
-                    this.logger.warning("[PER-TICK SYNC] Exception during position sync: " + e.getMessage());
+                    this.logger.warning("[PER-TICK SYNC] Exception during rider position sync: " + e.getMessage());
                 }
             }
 
@@ -366,6 +366,12 @@ public class VehicleMountSystem {
         }
         MountInfo info = this.mountedPlayers.get(player.getUuid());
         return info != null ? info.vehicleNetworkId : -1;
+    }
+
+    public PlayerRef getPlayerRefByUuid(UUID uuid) {
+        if (uuid == null) return null;
+        MountInfo info = this.mountedPlayers.get(uuid);
+        return info != null ? info.player : null;
     }
 
     public int getCurrentSeatIndex(PlayerRef player) {
@@ -455,7 +461,7 @@ public class VehicleMountSystem {
         try {
             vehicleData.vacateSeat(currentSeatIndex);
             vehicleData.occupySeat(nextSeatIndex);
-            this.mountedPlayers.put(playerUUID, new MountInfo(player, vehicleRef, nextSeatIndex, currentMount.vehicleNetworkId));
+            this.mountedPlayers.put(playerUUID, new MountInfo(player, vehicleRef, nextSeatIndex, currentMount.vehicleNetworkId, seatX, seatY, seatZ));
             try {
                 BaseVehicle vehicle;
                 VehicleRegistry registry;
@@ -614,12 +620,19 @@ public class VehicleMountSystem {
         Ref<EntityStore> vehicleRef;  // Non-final - can be updated when Ref becomes stale due to ECS compaction
         final int seatIndex;
         final int vehicleNetworkId;
+        final float seatOffsetX;
+        final float seatOffsetY;
+        final float seatOffsetZ;
 
-        MountInfo(PlayerRef player, Ref<EntityStore> vehicleRef, int seatIndex, int vehicleNetworkId) {
+        MountInfo(PlayerRef player, Ref<EntityStore> vehicleRef, int seatIndex, int vehicleNetworkId,
+                  float seatOffsetX, float seatOffsetY, float seatOffsetZ) {
             this.player = player;
             this.vehicleRef = vehicleRef;
             this.seatIndex = seatIndex;
             this.vehicleNetworkId = vehicleNetworkId;
+            this.seatOffsetX = seatOffsetX;
+            this.seatOffsetY = seatOffsetY;
+            this.seatOffsetZ = seatOffsetZ;
         }
     }
 }

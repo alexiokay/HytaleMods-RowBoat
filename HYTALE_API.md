@@ -1,7 +1,7 @@
 # Hytale Server API Reference
 
-Auto-generated from: Server-2026.01.29-301e13929.jar
-Generated: 2026-02-01T03:24:21.770036300
+Auto-generated from: Server-2026.02.18-f3b8fff95.jar
+Generated: 2026-02-18T19:25:31.364786600
 
 Run `./gradlew generateApiDocs` to refresh after Hytale updates.
 
@@ -307,6 +307,7 @@ Run `./gradlew generateApiDocs` to refresh after Hytale updates.
 - `EventTitleCommand`
 - `NotifyCommand`
 - `StashCommand`
+- `UIGalleryCommand`
 - `ValidateCPBCommand`
 
 ## com.hypixel.hytale.server.core.command.commands.utility.git
@@ -500,6 +501,7 @@ Run `./gradlew generateApiDocs` to refresh after Hytale updates.
 ## com.hypixel.hytale.server.core.command.system.pages
 
 - `CommandListPage`
+- `UIGalleryPage`
 
 ## com.hypixel.hytale.server.core.command.system.suggestion
 
@@ -690,6 +692,7 @@ Run `./gradlew generateApiDocs` to refresh after Hytale updates.
 - `WorldLoadCommand`
 - `WorldPruneCommand`
 - `WorldRemoveCommand`
+- `WorldRocksDbCommand`
 - `WorldSaveCommand`
 - `WorldSetDefaultCommand`
 
@@ -830,6 +833,7 @@ Run `./gradlew generateApiDocs` to refresh after Hytale updates.
 - `IChunkStorageProvider`
 - `IndexedStorageChunkStorageProvider`
 - `MigrationChunkStorageProvider`
+- `RocksDbChunkStorageProvider`
 
 ## com.hypixel.hytale.server.core.universe.world.storage.resources
 
@@ -924,5 +928,5 @@ Use `javap -cp <jar> <classname>` to get method signatures.
 
 Example:
 ```
-javap -cp "C:\Users\alexispace\.gradle\caches\modules-2\files-2.1\com.hypixel.hytale\Server\2026.01.29-301e13929\4625caaf92c24393b41f7477f5473872aa5c3b36\Server-2026.01.29-301e13929.jar" com.hypixel.hytale.server.core.command.system.CommandContext
+javap -cp "C:\Users\alexispace\.gradle\caches\modules-2\files-2.1\com.hypixel.hytale\Server\2026.02.18-f3b8fff95\c53b345d2d97cfb80e4e9fdca72f3935d8ab5cd1\Server-2026.02.18-f3b8fff95.jar" com.hypixel.hytale.server.core.command.system.CommandContext
 ```

@@ -7,15 +7,15 @@
     {
       "Type": "Dive",
       "MaxSwimSpeed": 3,
-      "MaxDiveSpeed": 2,
-      "MaxSinkSpeed": 0.3,
-      "Gravity": 5,
+      "MaxDiveSpeed": 0.01,
+      "MaxSinkSpeed": 0.01,
+      "Gravity": 0.01,
       "Acceleration": 2,
       "MaxRotationSpeed": 360,
-      "SwimDepth": 1,
-      "DesiredDepthWeight": 0.8,
-      "MinDepthBelowSurface": 0.1,
-      "SinkRatio": 0.1
+      "SwimDepth": 0,
+      "DesiredDepthWeight": 0.01,
+      "MinDepthBelowSurface": 0,
+      "SinkRatio": 0
     }
   ],
   "MaxHealth": {

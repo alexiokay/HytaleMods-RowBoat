@@ -7,7 +7,7 @@ plugins {
 apply<RunHytalePlugin>()
 
 group = "com.alexispace"
-version = "1.0.4"
+version = "1.0.5"
 
 java {
     toolchain {
@@ -28,12 +28,23 @@ tasks.jar {
 }
 
 tasks.shadowJar {
-    archiveBaseName.set("AlexisRowboat")
+    archiveBaseName.set("AlexisRowboat-dev")
     archiveClassifier.set("")
 }
 
 tasks.build {
     dependsOn(tasks.shadowJar)
+}
+
+// Release JAR: excludes test/dev resources
+// Usage: ./gradlew :app:releaseJar
+val releaseJar by tasks.registering(com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class) {
+    from(sourceSets.main.get().output)
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+    archiveBaseName.set("AlexisRowboat")
+    archiveClassifier.set("release")
+    exclude("**/Common/Items/*_Test/**")
+    exclude("**/Server/Item/Items/*_Test*")
 }
 
 // Configure the Hytale server runner
